@@ -17,15 +17,17 @@ defmodule KuboErp.SalesTotalsTest do
   end
 
   test "suma los importes de varias lineas" do
+    # Linea 1: 1 x 11900 (IVA incluido) -> total 11900, impuesto 1900, base 10000
+    # Linea 2: 3 x 5950  (IVA incluido) -> total 17850, impuesto 2850, base 15000
     totals =
       Sales.totals([
         Sales.line_amounts(1, Decimal.new("11900.00"), Decimal.new("19.00")),
         Sales.line_amounts(3, Decimal.new("5950.00"), Decimal.new("19.00"))
       ])
 
-    assert Decimal.equal?(totals.total, Decimal.new("41650.00"))
-    assert Decimal.equal?(totals.subtotal, Decimal.new("35000.00"))
-    assert Decimal.equal?(totals.tax, Decimal.new("6650.00"))
+    assert Decimal.equal?(totals.total, Decimal.new("29750.00"))
+    assert Decimal.equal?(totals.subtotal, Decimal.new("25000.00"))
+    assert Decimal.equal?(totals.tax, Decimal.new("4750.00"))
   end
 
   test "un producto exento de IVA no genera impuesto" do

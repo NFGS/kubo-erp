@@ -1,6 +1,8 @@
 defmodule KuboErpWeb.ProductJSON do
   @moduledoc "Representacion JSON de productos del catalogo."
 
+  alias KuboErp.Catalog.Product
+
   def index(%{products: products}) do
     %{data: Enum.map(products, &data/1), total: length(products)}
   end
@@ -20,7 +22,8 @@ defmodule KuboErpWeb.ProductJSON do
       tax_rate: money(product.tax_rate),
       stock: product.stock,
       min_stock: product.min_stock,
-      low_stock: product.stock <= product.min_stock,
+      # La regla de "stock bajo" vive en el dominio, no en la capa de presentacion.
+      low_stock: Product.low_stock?(product),
       active: product.active,
       created_at: iso(product.inserted_at),
       updated_at: iso(product.updated_at)

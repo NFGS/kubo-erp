@@ -24,7 +24,8 @@ defmodule KuboErpWeb.StockJSON do
       price: money(product.price),
       stock: product.stock,
       min_stock: product.min_stock,
-      low_stock: product.stock <= product.min_stock,
+      # Misma regla que usa el catalogo: una sola definicion de "stock bajo".
+      low_stock: KuboErp.Catalog.Product.low_stock?(product),
       active: product.active
     }
   end
