@@ -48,7 +48,8 @@ defmodule KuboErp.Sales do
   end
 
   def stats(tenant_id) do
-    today = Date.utc_today()
+    timezone = business_timezone()
+    today = business_today(timezone)
 
     completed =
       from(s in Sale, where: s.tenant_id == ^tenant_id and s.status == "COMPLETED")
@@ -60,13 +61,46 @@ defmodule KuboErp.Sales do
       sales_today:
         Repo.one(
           from(s in completed,
-            where: fragment("?::date", s.inserted_at) == ^today,
+            where:
+              fragment("(? AT TIME ZONE 'UTC' AT TIME ZONE ?)::date = ?", s.inserted_at, ^timezone, ^today),
             select: coalesce(sum(s.total), 0)
           )
         )
         |> to_decimal(),
-      voided_count: Repo.aggregate(from(s in Sale, where: s.tenant_id == ^tenant_id and s.status == "VOIDED"), :count)
+      sales_today_count:
+        Repo.aggregate(
+          from(s in completed,
+            where:
+              fragment("(? AT TIME ZONE 'UTC' AT TIME ZONE ?)::date = ?", s.inserted_at, ^timezone, ^today)
+          ),
+          :count
+        ),
+      timezone: timezone,
+      business_date: Date.to_iso8601(today),
+      voided_count:
+        Repo.aggregate(
+          from(s in Sale, where: s.tenant_id == ^tenant_id and s.status == "VOIDED"),
+          :count
+        )
     }
+  end
+
+  @doc """
+  Zona horaria del negocio, configurable con `KUBO_TIMEZONE`.
+
+  Las columnas de fecha se guardan en UTC (correcto para almacenar), pero el dia
+  comercial se calcula en la zona del negocio: una venta de las 20:00 en Colombia
+  pertenece a ese dia, no al siguiente.
+  """
+  def business_timezone do
+    Application.get_env(:kubo_erp, :timezone, "America/Bogota")
+  end
+
+  defp business_today(timezone) do
+    case DateTime.now(timezone) do
+      {:ok, now} -> DateTime.to_date(now)
+      _error -> Date.utc_today()
+    end
   end
 
   # ---------------------------------------------------------------------------
@@ -278,9 +312,24 @@ defmodule KuboErp.Sales do
     |> Map.new(&{&1.id, &1})
   end
 
+  @doc """
+  Siguiente numero de venta del negocio.
+
+  Se usa el **maximo** del consecutivo (no un conteo): el indice unico
+  `(tenant_id, number)` lo resuelve en tiempo logaritmico, mientras que un
+  `COUNT(*)` recorre todas las ventas del negocio en cada operacion. Si dos cajas
+  coinciden, la restriccion unica lo detecta y la venta se reintenta.
+  """
   defp next_number(tenant_id) do
-    count = Repo.aggregate(from(s in Sale, where: s.tenant_id == ^tenant_id), :count)
-    "V-" <> String.pad_leading(Integer.to_string(count + 1), 6, "0")
+    last =
+      Repo.one(
+        from(s in Sale,
+          where: s.tenant_id == ^tenant_id,
+          select: max(fragment("NULLIF(regexp_replace(?, '\\D', '', 'g'), '')::bigint", s.number))
+        )
+      )
+
+    "V-" <> String.pad_leading(Integer.to_string((last || 0) + 1), 6, "0")
   end
 
   defp normalize_items(items) when is_list(items) do

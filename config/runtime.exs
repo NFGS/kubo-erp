@@ -27,6 +27,11 @@ config :kubo_erp, KuboErpWeb.Endpoint,
 # eventos (degradacion elegante: la venta nunca falla por la mensajeria).
 config :kubo_erp, :amqp_url, System.get_env("AMQP_URL")
 
+# Zona horaria del negocio. Se usa para responder "¿que se vendio hoy?" con el
+# dia comercial real y no con el dia UTC: en Colombia (UTC-5) las ventas
+# posteriores a las 19:00 pertenecen al dia anterior en UTC.
+config :kubo_erp, :timezone, System.get_env("KUBO_TIMEZONE", "America/Bogota")
+
 if config_env() == :prod do
   database_url =
     System.get_env("DATABASE_URL") ||
