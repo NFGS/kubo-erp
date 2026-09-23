@@ -1,0 +1,9 @@
+#!/bin/bash
+set -e
+
+if [ "${KUBO_RUN_MIGRATIONS:-true}" = "true" ]; then
+  echo "[kubo-erp] aplicando migraciones de base de datos"
+  mix ecto.migrate
+fi
+
+exec "$@"

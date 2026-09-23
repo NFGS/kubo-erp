@@ -1,0 +1,10 @@
+.git/
+.gitignore
+_build/
+deps/
+cover/
+doc/
+test/
+.env
+*.log
+README.md
