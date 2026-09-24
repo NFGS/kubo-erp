@@ -33,6 +33,14 @@ venta completa en una transacción con bloqueo pesimista de las filas.
 | GET | `/api/v1/sales/:id` | Detalle |
 | POST | `/api/v1/sales/:id/void` | Anular venta (devuelve stock) |
 | GET | `/api/v1/sales/stats` | Totales del día |
+| GET | `/api/v1/suppliers` | Proveedores (`q`, `active`) |
+| POST | `/api/v1/suppliers` | Crear proveedor |
+| PATCH · DELETE | `/api/v1/suppliers/:id` | Actualizar · borrado lógico |
+| GET | `/api/v1/purchases` | Compras (`status`, `supplier_id`) |
+| POST | `/api/v1/purchases` | Registrar compra (suma inventario) |
+| GET | `/api/v1/purchases/:id` | Detalle de compra |
+| POST | `/api/v1/purchases/:id/void` | Anular compra (revierte inventario) |
+| GET | `/api/v1/purchases/stats` | Totales de compras |
 | GET | `/api/v1/health` | Estado del servicio, base y bus |
 
 ## Consistencia del inventario
@@ -100,6 +108,16 @@ docker run --rm -m 3g -e MIX_ENV=test \
   savepoints (`Repo.scoped_transaction/1`) para que un rollback de negocio no
   aborte la transacción externa (ADR-0010). `outbox_events` queda fuera de RLS a
   propósito: es la tabla operativa que el publicador lee cruzando negocios.
+
+## Compras y proveedores (Fase 3)
+
+La mercancía entra por una **compra** con proveedor y costo, no por un ajuste
+manual. `Purchases.create/3` bloquea los productos, inserta la compra y su
+detalle, **suma** el stock, deja el kardex (`reference_type = PURCHASE`),
+actualiza `products.cost` con el valor **sin IVA** (el costo unitario se captura
+con IVA incluido) y guarda `purchase.received` en la bandeja de salida. Anular
+la compra revierte el stock con `PURCHASE_VOID` y conserva la historia. La
+numeración (`C-000001`) sale del contador atómico por negocio.
 
 ## Observabilidad y calidad (Fase 2)
 
