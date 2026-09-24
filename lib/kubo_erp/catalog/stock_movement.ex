@@ -24,6 +24,8 @@ defmodule KuboErp.Catalog.StockMovement do
     field :reason, :string
     field :reference_type, :string
     field :reference_id, :binary_id
+    # Bodega del movimiento (P-22): el kardex es por bodega.
+    field :warehouse_id, :binary_id
     field :created_by, :binary_id
 
     timestamps(type: :utc_datetime, updated_at: false)
@@ -42,6 +44,7 @@ defmodule KuboErp.Catalog.StockMovement do
       :reason,
       :reference_type,
       :reference_id,
+      :warehouse_id,
       :created_by
     ])
     |> validate_required([:tenant_id, :product_id, :kind, :quantity, :stock_after])

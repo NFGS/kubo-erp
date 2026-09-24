@@ -8,8 +8,8 @@ defmodule KuboErp.Catalog do
 
   import Ecto.Query
 
-  alias KuboErp.{Pagination, Repo}
-  alias KuboErp.Catalog.{Product, StockMovement}
+  alias KuboErp.{Pagination, Repo, Warehouses}
+  alias KuboErp.Catalog.{Product, StockLevel, StockMovement}
 
   # ---------------------------------------------------------------------------
   # Consultas
@@ -198,19 +198,82 @@ defmodule KuboErp.Catalog do
   mediante `lock_product/2` (bloqueo `FOR UPDATE`), para que dos ventas
   simultaneas no vendan el mismo stock.
   """
-  def move_stock(product, delta, opts) do
-    new_stock = product.stock + delta
+  @doc """
+  Mueve existencias de un producto en una bodega (P-22, ADR-0016).
 
-    if new_stock < 0 do
-      {:error, {:insufficient_stock, product}}
+  Actualiza el nivel de la bodega —la fuente de verdad— y el total del producto
+  (proyeccion para las lecturas rapidas) en la misma transaccion. Sin bodega
+  explicita se usa la bodega por defecto del negocio.
+
+  `stock_after` del movimiento es el saldo **de esa bodega**, no el total: el
+  kardex es por bodega.
+  """
+  def move_stock(product, delta, opts \\ []) do
+    warehouse_id = opts[:warehouse_id] || Warehouses.default(product.tenant_id).id
+
+    case mover_nivel(product, warehouse_id, delta) do
+      {:error, :insufficient_stock} ->
+        {:error, {:insufficient_stock, product}}
+
+      {:error, changeset} ->
+        {:error, changeset}
+
+      {:ok, nivel} ->
+        new_stock = product.stock + delta
+
+        with {:ok, updated} <-
+               product
+               |> Ecto.Changeset.change(stock: new_stock)
+               |> Repo.update(),
+             {:ok, movement} <-
+               insert_movement(
+                 updated,
+                 delta,
+                 nivel.stock,
+                 Keyword.put(opts, :warehouse_id, warehouse_id)
+               ) do
+          {:ok, updated, movement}
+        else
+          {:error, changeset} -> {:error, changeset}
+        end
+    end
+  end
+
+  # Bloquea el nivel de la bodega (lo crea si es la primera vez) y aplica el
+  # delta sin permitir negativos.
+  defp mover_nivel(product, warehouse_id, delta) do
+    condicion =
+      dynamic(
+        [l],
+        l.tenant_id == ^product.tenant_id and l.warehouse_id == ^warehouse_id and
+          l.product_id == ^product.id
+      )
+
+    nivel =
+      StockLevel |> where(^condicion) |> lock("FOR UPDATE") |> Repo.one() ||
+        case %StockLevel{}
+             |> StockLevel.changeset(%{
+               tenant_id: product.tenant_id,
+               warehouse_id: warehouse_id,
+               product_id: product.id,
+               stock: 0
+             })
+             |> Repo.insert() do
+          {:ok, creado} ->
+            creado
+
+          {:error, _changeset} ->
+            # Otra peticion lo creo entre la lectura y el insert: se relee con bloqueo.
+            StockLevel |> where(^condicion) |> lock("FOR UPDATE") |> Repo.one()
+        end
+
+    nuevo = nivel.stock + delta
+
+    if nuevo < 0 do
+      {:error, :insufficient_stock}
     else
-      with {:ok, updated} <-
-             product
-             |> Ecto.Changeset.change(stock: new_stock)
-             |> Repo.update(),
-           {:ok, movement} <- insert_movement(updated, delta, new_stock, opts) do
-        {:ok, updated, movement}
-      else
+      case nivel |> Ecto.Changeset.change(stock: nuevo) |> Repo.update() do
+        {:ok, actualizado} -> {:ok, actualizado}
         {:error, changeset} -> {:error, changeset}
       end
     end
@@ -236,6 +299,7 @@ defmodule KuboErp.Catalog do
       kind: opts[:kind] || if(delta >= 0, do: "IN", else: "OUT"),
       quantity: abs(delta),
       stock_after: stock_after,
+      warehouse_id: opts[:warehouse_id],
       reason: opts[:reason],
       reference_type: opts[:reference_type],
       reference_id: opts[:reference_id],

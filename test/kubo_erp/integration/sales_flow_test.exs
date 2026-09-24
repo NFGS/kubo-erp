@@ -13,7 +13,7 @@ defmodule KuboErp.Integration.SalesFlowTest do
 
   use KuboErp.DataCase, async: false
 
-  alias KuboErp.{Catalog, Invoices, Repo, Sales}
+  alias KuboErp.{Catalog, Invoices, Repo, Sales, Transfers, Warehouses}
 
   setup do
     tenant = Ecto.UUID.generate()
@@ -45,6 +45,52 @@ defmodule KuboErp.Integration.SalesFlowTest do
     assert contar("sales", tenant) == 1
     assert contar_eventos(venta.id) == 1
     assert contar("stock_movements", tenant) == 2
+  end
+
+  test "la transferencia mueve las dos bodegas y el total no cambia (P-22)", %{
+    tenant: tenant,
+    producto: producto
+  } do
+    origen = como_tenant(tenant, fn -> Warehouses.default(tenant) end)
+    {:ok, destino} = como_tenant(tenant, fn -> Warehouses.create(tenant, %{"name" => "Bodega norte"}) end)
+
+    {:ok, transferencia} =
+      como_tenant(tenant, fn ->
+        Transfers.create(tenant, Ecto.UUID.generate(), %{
+          "from_warehouse_id" => origen.id,
+          "to_warehouse_id" => destino.id,
+          "items" => [%{"product_id" => producto.id, "quantity" => 4}]
+        })
+      end)
+
+    # El total del producto no cambia: la mercancia sigue en el negocio.
+    assert stock(tenant, producto) == 10
+    assert nivel(tenant, origen.id, producto) == 6
+    assert nivel(tenant, destino.id, producto) == 4
+
+    # Kardex: dos movimientos con la misma referencia, uno por bodega.
+    %{rows: filas} =
+      como_tenant(tenant, fn ->
+        Repo.query!(
+          "select kind, warehouse_id from stock_movements where reference_type = 'TRANSFER' and reference_id = $1 order by kind",
+          [Ecto.UUID.dump!(transferencia.id)]
+        )
+      end)
+
+    assert filas == [["IN", Ecto.UUID.dump!(destino.id)], ["OUT", Ecto.UUID.dump!(origen.id)]]
+
+    # Sin existencia en el origen no se mueve nada.
+    assert {:error, {:insufficient_stock, _}} =
+             como_tenant(tenant, fn ->
+               Transfers.create(tenant, Ecto.UUID.generate(), %{
+                 "from_warehouse_id" => origen.id,
+                 "to_warehouse_id" => destino.id,
+                 "items" => [%{"product_id" => producto.id, "quantity" => 99}]
+               })
+             end)
+
+    assert nivel(tenant, origen.id, producto) == 6
+    assert nivel(tenant, destino.id, producto) == 4
   end
 
   test "la factura se emite una sola vez y queda aislada por negocio (P-18)", %{
@@ -198,6 +244,18 @@ defmodule KuboErp.Integration.SalesFlowTest do
       {:ok, venta} -> venta
       {:error, razon} -> {:error, razon}
     end
+  end
+
+  defp nivel(tenant, warehouse_id, producto) do
+    como_tenant(tenant, fn ->
+      %{rows: [[valor]]} =
+        Repo.query!(
+          "select stock from stock_levels where warehouse_id = $1 and product_id = $2",
+          [Ecto.UUID.dump!(warehouse_id), Ecto.UUID.dump!(producto.id)]
+        )
+
+      valor
+    end)
   end
 
   defp stock(tenant, producto) do
