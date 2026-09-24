@@ -47,6 +47,14 @@ defmodule KuboErp.Integration.SalesFlowTest do
     assert contar("stock_movements", tenant) == 2
   end
 
+  test "la zona horaria del negocio manda sobre el respaldo (ADR-0012)", %{tenant: tenant} do
+    stats = como_tenant(tenant, fn -> Sales.stats(tenant, "America/Mexico_City") end)
+    assert stats.timezone == "America/Mexico_City"
+
+    respaldo = como_tenant(tenant, fn -> Sales.stats(tenant) end)
+    assert respaldo.timezone == Sales.business_timezone()
+  end
+
   test "el kardex registra el movimiento y la anulacion lo revierte", %{
     tenant: tenant,
     producto: producto

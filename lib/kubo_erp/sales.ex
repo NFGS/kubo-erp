@@ -61,8 +61,14 @@ defmodule KuboErp.Sales do
     end
   end
 
-  def stats(tenant_id) do
-    timezone = business_timezone()
+  @doc """
+  Indicadores de venta del negocio.
+
+  La zona horaria llega del token del negocio (cabecera propagada por el
+  gateway, ADR-0012); sin ella se usa el respaldo configurado.
+  """
+  def stats(tenant_id, timezone \\ nil) do
+    timezone = timezone || business_timezone()
     today = business_today(timezone)
 
     completed =

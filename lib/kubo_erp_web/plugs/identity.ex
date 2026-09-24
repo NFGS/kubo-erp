@@ -22,6 +22,7 @@ defmodule KuboErpWeb.Plugs.Identity do
   def call(conn, _opts) do
     tenant_id = header(conn, "x-tenant-id")
     user_id = header(conn, "x-user-id")
+    timezone = header(conn, "x-tenant-timezone")
 
     cond do
       not present?(tenant_id) ->
@@ -33,12 +34,24 @@ defmodule KuboErpWeb.Plugs.Identity do
       present?(user_id) and not Regex.match?(@uuid_regex, user_id) ->
         error(conn, :bad_request, "INVALID_USER", "El usuario indicado no es valido")
 
+      # Una zona desconocida haria caer el dia comercial a UTC en silencio: se
+      # rechaza en la puerta (ADR-0012). Ausente es valido: aplica el respaldo.
+      present?(timezone) and not timezone_valida?(timezone) ->
+        error(conn, :bad_request, "INVALID_TIMEZONE", "La zona horaria del negocio no es valida")
+
       true ->
         conn
         |> assign(:tenant_id, tenant_id)
         |> assign(:user_id, user_id)
         |> assign(:user_role, header(conn, "x-user-role"))
+        |> assign(:tenant_timezone, timezone)
     end
+  end
+
+  # La base de zonas se carga al arrancar (tzdata); si no conoce el nombre, no es
+  # una zona IANA valida.
+  defp timezone_valida?(valor) do
+    match?({:ok, _ahora}, DateTime.now(valor))
   end
 
   defp error(conn, status, code, message) do

@@ -16,7 +16,9 @@ defmodule KuboErpWeb.SaleController do
   end
 
   def stats(conn, _params) do
-    render(conn, :stats, stats: Sales.stats(conn.assigns.tenant_id))
+    render(conn, :stats,
+      stats: Sales.stats(conn.assigns.tenant_id, conn.assigns[:tenant_timezone])
+    )
   end
 
   def show(conn, %{"id" => id}) do

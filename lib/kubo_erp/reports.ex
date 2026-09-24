@@ -33,10 +33,10 @@ defmodule KuboErp.Reports do
   Devuelve `{:ok, csv}` o `{:error, mensaje}` cuando el rango no es valido o
   supera el maximo de filas (para responder 400 en lugar de un 500).
   """
-  def sales_csv(tenant_id, params \\ %{}) do
+  def sales_csv(tenant_id, params \\ %{}, timezone \\ nil) do
     with {:ok, desde} <- validar_fecha(params["from"], "from"),
          {:ok, hasta} <- validar_fecha(params["to"], "to") do
-      timezone = Sales.business_timezone()
+      timezone = timezone || Sales.business_timezone()
 
       query =
         Sale

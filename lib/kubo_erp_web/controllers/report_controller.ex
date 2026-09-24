@@ -6,7 +6,11 @@ defmodule KuboErpWeb.ReportController do
   alias KuboErp.Reports
 
   def sales(conn, params) do
-    responder(conn, Reports.sales_csv(conn.assigns.tenant_id, params), "ventas.csv")
+    responder(
+      conn,
+      Reports.sales_csv(conn.assigns.tenant_id, params, conn.assigns[:tenant_timezone]),
+      "ventas.csv"
+    )
   end
 
   def inventory(conn, _params) do
