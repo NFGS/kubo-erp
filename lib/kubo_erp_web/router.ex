@@ -36,6 +36,10 @@ defmodule KuboErpWeb.Router do
     # Compras y proveedores (P-15): cierran el ciclo del inventario.
     resources("/suppliers", SupplierController, except: [:new, :edit])
 
+    # Multi-bodega (P-22): bodegas y transferencias atomicas.
+    resources("/warehouses", WarehouseController, except: [:new, :edit])
+    resources("/transfers", TransferController, only: [:index, :show, :create])
+
     get("/purchases/stats", PurchaseController, :stats)
     post("/purchases/:id/void", PurchaseController, :void)
     resources("/purchases", PurchaseController, only: [:index, :show, :create])

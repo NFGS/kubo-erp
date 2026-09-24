@@ -18,6 +18,7 @@ defmodule KuboErp.Transfers do
     |> where([t], t.tenant_id == ^tenant_id)
     |> order_by([t], desc: t.inserted_at)
     |> limit(^limit)
+    |> preload(:items)
     |> Repo.all()
   end
 

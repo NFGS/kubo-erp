@@ -125,6 +125,15 @@ defmodule KuboErp.Repo.Migrations.CreateWarehouses do
     )
 
     # --- Backfill: bodega por defecto, niveles y kardex historico ---------------
+    #
+    # `products` y `stock_movements` YA tienen RLS con FORCE (migracion 000004):
+    # sin el contexto de negocio el backfill veria cero filas y el `SET NOT NULL`
+    # fallaria. El dueno de la tabla puede suspender FORCE un momento —solo
+    # alcanza a esta transaccion de migracion— y restaurarlo al terminar.
+    execute("ALTER TABLE products NO FORCE ROW LEVEL SECURITY")
+    execute("ALTER TABLE stock_movements NO FORCE ROW LEVEL SECURITY")
+
+    # Idempotente: si la migracion se reintenta, no duplica ni pisa lo ya hecho.
     execute("""
     INSERT INTO warehouses (id, tenant_id, name, is_default, active, inserted_at, updated_at)
     SELECT gen_random_uuid(), negocios.tenant_id, 'Bodega principal', true, true, now(), now()
@@ -133,13 +142,14 @@ defmodule KuboErp.Repo.Migrations.CreateWarehouses do
       UNION
       SELECT DISTINCT tenant_id FROM stock_movements
     ) AS negocios
+    ON CONFLICT DO NOTHING
     """)
 
     execute("""
     UPDATE stock_movements AS m
     SET warehouse_id = w.id
     FROM warehouses AS w
-    WHERE w.tenant_id = m.tenant_id AND w.is_default
+    WHERE w.tenant_id = m.tenant_id AND w.is_default AND m.warehouse_id IS NULL
     """)
 
     execute("ALTER TABLE stock_movements ALTER COLUMN warehouse_id SET NOT NULL")
@@ -149,7 +159,11 @@ defmodule KuboErp.Repo.Migrations.CreateWarehouses do
     SELECT gen_random_uuid(), p.tenant_id, w.id, p.id, p.stock, now(), now()
     FROM products AS p
     JOIN warehouses AS w ON w.tenant_id = p.tenant_id AND w.is_default
+    ON CONFLICT (tenant_id, warehouse_id, product_id) DO NOTHING
     """)
+
+    execute("ALTER TABLE products FORCE ROW LEVEL SECURITY")
+    execute("ALTER TABLE stock_movements FORCE ROW LEVEL SECURITY")
 
     # --- RLS despues del backfill ----------------------------------------------
     for tabla <- ["warehouses", "stock_levels", "stock_transfers", "stock_transfer_items"] do
