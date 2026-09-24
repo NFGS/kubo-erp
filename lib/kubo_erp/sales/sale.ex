@@ -11,20 +11,21 @@ defmodule KuboErp.Sales.Sale do
   @payment_methods ~w[CASH CARD TRANSFER CREDIT]
 
   schema "sales" do
-    field :tenant_id, :binary_id
-    field :number, :string
-    field :customer_id, :binary_id
-    field :customer_name, :string
-    field :status, :string, default: "COMPLETED"
-    field :payment_method, :string, default: "CASH"
-    field :subtotal, :decimal, default: Decimal.new(0)
-    field :tax, :decimal, default: Decimal.new(0)
-    field :total, :decimal, default: Decimal.new(0)
-    field :notes, :string
-    field :sold_by, :binary_id
-    field :voided_at, :utc_datetime
+    field(:tenant_id, :binary_id)
+    field(:number, :string)
+    field(:customer_id, :binary_id)
+    field(:customer_name, :string)
+    field(:status, :string, default: "COMPLETED")
+    field(:payment_method, :string, default: "CASH")
+    field(:subtotal, :decimal, default: Decimal.new(0))
+    field(:tax, :decimal, default: Decimal.new(0))
+    field(:total, :decimal, default: Decimal.new(0))
+    field(:notes, :string)
+    field(:sold_by, :binary_id)
+    field(:cash_session_id, :binary_id)
+    field(:voided_at, :utc_datetime)
 
-    has_many :items, KuboErp.Sales.SaleItem, foreign_key: :sale_id
+    has_many(:items, KuboErp.Sales.SaleItem, foreign_key: :sale_id)
 
     timestamps(type: :utc_datetime)
   end
@@ -46,6 +47,7 @@ defmodule KuboErp.Sales.Sale do
       :total,
       :notes,
       :sold_by,
+      :cash_session_id,
       :voided_at
     ])
     |> validate_required([:tenant_id, :number, :total])

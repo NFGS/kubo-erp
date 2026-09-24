@@ -13,7 +13,7 @@ defmodule KuboErp.Sales do
   import Ecto.Query
 
   alias Ecto.Changeset
-  alias KuboErp.{Catalog, Pagination, Repo}
+  alias KuboErp.{Cash, Catalog, Pagination, Repo}
   alias KuboErp.Catalog.Product
   alias KuboErp.Sales.{Sale, SaleItem}
   alias KuboErp.Events.{Outbox, Publisher, SaleCreated}
@@ -270,7 +270,10 @@ defmodule KuboErp.Sales do
         tax: totals.tax,
         total: totals.total,
         notes: attrs["notes"],
-        sold_by: user_id
+        sold_by: user_id,
+        # La venta se liga al turno de caja abierto: el arqueo suma exactamente
+        # las ventas de la sesion (P-16).
+        cash_session_id: Cash.open_session_id(tenant_id)
       })
 
     sale_items =

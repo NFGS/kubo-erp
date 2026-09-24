@@ -36,5 +36,12 @@ defmodule KuboErpWeb.Router do
     get("/purchases/stats", PurchaseController, :stats)
     post("/purchases/:id/void", PurchaseController, :void)
     resources("/purchases", PurchaseController, only: [:index, :show, :create])
+
+    # Caja (P-16): apertura, cierre y arqueo por turno.
+    get("/cash-sessions/current", CashSessionController, :current)
+    post("/cash-sessions/open", CashSessionController, :open)
+    post("/cash-sessions/:id/close", CashSessionController, :close)
+    get("/cash-sessions/:id", CashSessionController, :show)
+    get("/cash-sessions", CashSessionController, :index)
   end
 end
