@@ -11,6 +11,10 @@ defmodule KuboErp.Application do
 
   @impl true
   def start(_type, _args) do
+    # Zona horaria real del negocio (tzdata). Sin esto, Elixir solo conoce UTC y
+    # el calculo del dia comercial caeria silenciosamente a UTC.
+    Calendar.put_time_zone_database(Tzdata.TimeZoneDatabase)
+
     setup_tracing()
 
     children = [

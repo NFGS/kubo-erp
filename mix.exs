@@ -48,6 +48,9 @@ defmodule KuboErp.MixProject do
       {:jason, "~> 1.2"},
       {:amqp, "~> 4.2"},
       {:bandit, "~> 1.5"},
+      # Base de datos de zonas horarias: sin ella `DateTime.now("America/Bogota")`
+      # devuelve error y el dia comercial caeria a UTC (bug A-01).
+      {:tzdata, "~> 1.1"},
       # Trazas OpenTelemetry (P-07): SDK, exportador OTLP e instrumentacion de
       # Phoenix y Ecto.
       {:opentelemetry, "~> 1.5"},

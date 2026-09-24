@@ -122,8 +122,15 @@ defmodule KuboErp.Sales do
 
   defp business_today(timezone) do
     case DateTime.now(timezone) do
-      {:ok, now} -> DateTime.to_date(now)
-      _error -> Date.utc_today()
+      {:ok, now} ->
+        DateTime.to_date(now)
+
+      {:error, reason} ->
+        # No debe ocurrir con tzdata cargada; si ocurre, se registra y se usa UTC
+        # (mejor un dia aproximado que tumbar el tablero), pero queda visible.
+        require Logger
+        Logger.warning("Zona horaria #{timezone} no disponible (#{inspect(reason)}); se usa UTC")
+        Date.utc_today()
     end
   end
 
@@ -171,12 +178,22 @@ defmodule KuboErp.Sales do
   def create_sale(tenant_id, user_id, attrs) do
     items = normalize_items(attrs["items"] || attrs[:items])
 
-    if items == [] do
-      {:error, :empty_items}
-    else
-      do_create_sale(tenant_id, user_id, attrs, items, 0)
+    cond do
+      items == [] ->
+        {:error, :empty_items}
+
+      # El nombre del cliente se denormaliza porque el cliente vive en el CRM.
+      # Aceptarlo vacio dejaba la venta, el reporte y el comprobante en
+      # "Consumidor final" aunque hubiera cliente: mejor rechazar que perder el dato.
+      presente?(attrs["customer_id"]) and not presente?(attrs["customer_name"]) ->
+        {:error, :customer_name_required}
+
+      true ->
+        do_create_sale(tenant_id, user_id, attrs, items, 0)
     end
   end
+
+  defp presente?(valor), do: is_binary(valor) and String.trim(valor) != ""
 
   def void_sale(tenant_id, user_id, id) do
     case get_sale(tenant_id, id) do

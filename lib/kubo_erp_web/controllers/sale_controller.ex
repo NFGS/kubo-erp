@@ -57,6 +57,14 @@ defmodule KuboErpWeb.SaleController do
           "Stock insuficiente de #{product.name}: disponible #{product.stock}"
         )
 
+      {:error, :customer_name_required} ->
+        error(
+          conn,
+          :unprocessable_entity,
+          "CUSTOMER_NAME_REQUIRED",
+          "Si la venta lleva cliente, debe incluir su nombre (customer_name)"
+        )
+
       {:error, :number_conflict} ->
         error(
           conn,
