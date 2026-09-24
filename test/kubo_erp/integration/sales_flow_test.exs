@@ -47,6 +47,26 @@ defmodule KuboErp.Integration.SalesFlowTest do
     assert contar("stock_movements", tenant) == 2
   end
 
+  test "el paquete siembra un catalogo de arranque idempotente (P-17)", %{tenant: tenant} do
+    pack = KuboErp.Packs.get("restaurantes")
+
+    primera = como_tenant(tenant, fn -> Catalog.seed_pack(tenant, pack) end)
+    assert primera.created == 3
+    assert primera.skipped == 0
+
+    segunda = como_tenant(tenant, fn -> Catalog.seed_pack(tenant, pack) end)
+    assert segunda.created == 0
+    assert segunda.skipped == 3
+
+    # Los productos nacen con el inventario del vertical (restaurantes si lleva).
+    %{rows: filas} =
+      como_tenant(tenant, fn ->
+        Repo.query!("select sku, tracks_stock from products where sku like 'PLT-%' order by sku")
+      end)
+
+    assert filas == [["PLT-001", true], ["PLT-002", true], ["PLT-003", true]]
+  end
+
   test "un servicio no mueve kardex y la venta guarda la mesa (P-17)", %{tenant: tenant} do
     servicio =
       como_tenant(tenant, fn ->

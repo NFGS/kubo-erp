@@ -23,7 +23,12 @@ defmodule KuboErp.Packs do
       product_label_plural: "Productos",
       default_tax_rate: "19.00",
       tracks_stock: true,
-      pos_flow: "sale"
+      pos_flow: "sale",
+      starter_products: [
+        %{sku: "ARR-001", name: "Gaseosa 400 ml", price: "3500.00", cost: "2200.00"},
+        %{sku: "ARR-002", name: "Pan tajado", price: "5200.00", cost: "3800.00"},
+        %{sku: "ARR-003", name: "Leche 1 L", price: "4800.00", cost: "3400.00"}
+      ]
     },
     "servicios" => %{
       key: "servicios",
@@ -33,7 +38,12 @@ defmodule KuboErp.Packs do
       product_label_plural: "Servicios",
       default_tax_rate: "19.00",
       tracks_stock: false,
-      pos_flow: "sale"
+      pos_flow: "sale",
+      starter_products: [
+        %{sku: "SRV-001", name: "Corte de cabello", price: "30000.00", cost: "0.00"},
+        %{sku: "SRV-002", name: "Manicure", price: "25000.00", cost: "0.00"},
+        %{sku: "SRV-003", name: "Consulta", price: "50000.00", cost: "0.00"}
+      ]
     },
     "restaurantes" => %{
       key: "restaurantes",
@@ -43,7 +53,12 @@ defmodule KuboErp.Packs do
       product_label_plural: "Platillos",
       default_tax_rate: "8.00",
       tracks_stock: true,
-      pos_flow: "table"
+      pos_flow: "table",
+      starter_products: [
+        %{sku: "PLT-001", name: "Almuerzo del día", price: "18000.00", cost: "11000.00"},
+        %{sku: "PLT-002", name: "Gaseosa 400 ml", price: "4500.00", cost: "2800.00"},
+        %{sku: "PLT-003", name: "Café tinto", price: "3000.00", cost: "1200.00"}
+      ]
     },
     "agro" => %{
       key: "agro",
@@ -53,7 +68,12 @@ defmodule KuboErp.Packs do
       product_label_plural: "Insumos",
       default_tax_rate: "0.00",
       tracks_stock: true,
-      pos_flow: "sale"
+      pos_flow: "sale",
+      starter_products: [
+        %{sku: "INS-001", name: "Bulto de abono", price: "95000.00", cost: "78000.00"},
+        %{sku: "INS-002", name: "Semilla de maíz 1 kg", price: "32000.00", cost: "24000.00"},
+        %{sku: "INS-003", name: "Fertilizante foliar 1 L", price: "45000.00", cost: "33000.00"}
+      ]
     }
   }
 

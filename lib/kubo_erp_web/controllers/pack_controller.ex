@@ -3,7 +3,7 @@ defmodule KuboErpWeb.PackController do
 
   use KuboErpWeb, :controller
 
-  alias KuboErp.Packs
+  alias KuboErp.{Catalog, Packs}
 
   def index(conn, _params) do
     json(conn, %{data: Packs.all()})
@@ -11,5 +11,11 @@ defmodule KuboErpWeb.PackController do
 
   def current(conn, _params) do
     json(conn, %{data: Packs.get(conn.assigns[:tenant_vertical])})
+  end
+
+  @doc "Siembra el catalogo de arranque del paquete activo (idempotente)."
+  def apply(conn, _params) do
+    pack = Packs.get(conn.assigns[:tenant_vertical])
+    json(conn, %{data: Catalog.seed_pack(conn.assigns.tenant_id, pack)})
   end
 end

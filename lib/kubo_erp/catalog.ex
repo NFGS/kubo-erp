@@ -99,6 +99,44 @@ defmodule KuboErp.Catalog do
     |> Repo.insert()
   end
 
+  @doc """
+  Siembra el catalogo de arranque del paquete del negocio (P-17).
+
+  Idempotente: los SKU que ya existen se omiten, de modo que aplicar el paquete
+  dos veces no duplica nada y el resumen lo puede informar la interfaz.
+  """
+  def seed_pack(tenant_id, pack) do
+    productos = Map.get(pack, :starter_products, [])
+
+    existentes =
+      Product
+      |> where([p], p.tenant_id == ^tenant_id and p.sku in ^Enum.map(productos, & &1.sku))
+      |> select([p], p.sku)
+      |> Repo.all()
+      |> MapSet.new()
+
+    {creados, omitidos} =
+      Enum.reduce(productos, {0, 0}, fn producto, {creados, omitidos} ->
+        if MapSet.member?(existentes, producto.sku) do
+          {creados, omitidos + 1}
+        else
+          case create_product(tenant_id, %{
+                 "sku" => producto.sku,
+                 "name" => producto.name,
+                 "price" => producto.price,
+                 "cost" => producto.cost,
+                 "tax_rate" => pack.default_tax_rate,
+                 "tracks_stock" => pack.tracks_stock
+               }) do
+            {:ok, _producto} -> {creados + 1, omitidos}
+            {:error, _changeset} -> {creados, omitidos + 1}
+          end
+        end
+      end)
+
+    %{created: creados, skipped: omitidos, pack: pack.key}
+  end
+
   def update_product(product, attrs) do
     product
     |> Product.changeset(attrs)

@@ -41,6 +41,7 @@ defmodule KuboErpWeb.Router do
     # Paquetes de configuracion por vertical (P-17).
     get("/packs", PackController, :index)
     get("/packs/current", PackController, :current)
+    post("/packs/apply", PackController, :apply)
 
     # Reportes exportables (P-21).
     get("/reports/sales.csv", ReportController, :sales)
