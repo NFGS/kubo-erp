@@ -13,7 +13,7 @@ defmodule KuboErp.Sales do
   import Ecto.Query
 
   alias Ecto.Changeset
-  alias KuboErp.{Cash, Catalog, Pagination, Repo}
+  alias KuboErp.{Cash, Catalog, Notifications, Pagination, Repo}
   alias KuboErp.Catalog.Product
   alias KuboErp.Sales.{Sale, SaleItem}
   alias KuboErp.Events.{Outbox, Publisher, SaleCreated}
@@ -355,11 +355,30 @@ defmodule KuboErp.Sales do
              reference_id: sale.id,
              created_by: user_id
            ) do
-        {:ok, _product, _movement} -> sale_item
-        {:error, reason} -> Repo.rollback(reason)
+        {:ok, actualizado, _movement} ->
+          avisar_stock_bajo(product, actualizado)
+          sale_item
+
+        {:error, reason} ->
+          Repo.rollback(reason)
       end
     else
       sale_item
+    end
+  end
+
+  # Avisa cuando el producto CRUZA el minimo (P-19): avisar en cada venta por
+  # debajo del minimo seria ruido; lo util es enterarse la primera vez.
+  defp avisar_stock_bajo(anterior, actual) do
+    if anterior.stock > actual.min_stock and actual.stock <= actual.min_stock do
+      Notifications.notify(
+        actual.tenant_id,
+        "LOW_STOCK",
+        "Stock bajo de #{actual.name}",
+        "Quedan #{actual.stock} unidades de #{actual.name} (minimo #{actual.min_stock}).",
+        reference_type: "PRODUCT",
+        reference_id: actual.id
+      )
     end
   end
 

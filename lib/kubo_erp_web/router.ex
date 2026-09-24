@@ -40,6 +40,9 @@ defmodule KuboErpWeb.Router do
     resources("/warehouses", WarehouseController, except: [:new, :edit])
     resources("/transfers", TransferController, only: [:index, :show, :create])
 
+    # Buzon de notificaciones (P-19).
+    get("/notifications", NotificationController, :index)
+
     get("/purchases/stats", PurchaseController, :stats)
     post("/purchases/:id/void", PurchaseController, :void)
     resources("/purchases", PurchaseController, only: [:index, :show, :create])
