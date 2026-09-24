@@ -47,6 +47,38 @@ defmodule KuboErp.Integration.SalesFlowTest do
     assert contar("stock_movements", tenant) == 2
   end
 
+  test "un servicio no mueve kardex y la venta guarda la mesa (P-17)", %{tenant: tenant} do
+    servicio =
+      como_tenant(tenant, fn ->
+        {:ok, producto} =
+          Catalog.create_product(tenant, %{
+            "sku" => "SRV-#{String.slice(tenant, 0, 8)}",
+            "name" => "Corte de cabello",
+            "price" => "30000.00",
+            "cost" => "0",
+            "tracks_stock" => false
+          })
+
+        producto
+      end)
+
+    venta =
+      como_tenant(tenant, fn ->
+        Sales.create_sale(tenant, Ecto.UUID.generate(), %{
+          "items" => [%{"product_id" => servicio.id, "quantity" => 5}],
+          "payment_method" => "CASH",
+          "table_number" => "Mesa 4"
+        })
+      end)
+
+    assert {:ok, %{table_number: "Mesa 4"} = vendida} = venta
+    assert vendida.total == Decimal.new("150000.00")
+
+    # Sin stock ni kardex: el servicio no lleva inventario.
+    assert stock(tenant, servicio) == 0
+    assert movimientos(tenant, servicio) == []
+  end
+
   test "la zona horaria del negocio manda sobre el respaldo (ADR-0012)", %{tenant: tenant} do
     stats = como_tenant(tenant, fn -> Sales.stats(tenant, "America/Mexico_City") end)
     assert stats.timezone == "America/Mexico_City"

@@ -25,6 +25,7 @@ defmodule KuboErpWeb.SaleJSON do
       tax: money(sale.tax),
       total: money(sale.total),
       notes: sale.notes,
+      table_number: sale.table_number,
       sold_by: sale.sold_by,
       voided_at: iso(sale.voided_at),
       created_at: iso(sale.inserted_at),

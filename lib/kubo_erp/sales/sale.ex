@@ -21,6 +21,8 @@ defmodule KuboErp.Sales.Sale do
     field(:tax, :decimal, default: Decimal.new(0))
     field(:total, :decimal, default: Decimal.new(0))
     field(:notes, :string)
+    # Mesa o cuenta del flujo de restaurante (P-17, pos_flow: "table").
+    field(:table_number, :string)
     field(:sold_by, :binary_id)
     field(:cash_session_id, :binary_id)
     field(:voided_at, :utc_datetime)
@@ -46,6 +48,7 @@ defmodule KuboErp.Sales.Sale do
       :tax,
       :total,
       :notes,
+      :table_number,
       :sold_by,
       :cash_session_id,
       :voided_at

@@ -11,18 +11,20 @@ defmodule KuboErp.Catalog.Product do
   @foreign_key_type :binary_id
 
   schema "products" do
-    field :tenant_id, :binary_id
-    field :sku, :string
-    field :name, :string
-    field :description, :string
-    field :unit, :string, default: "UN"
-    field :price, :decimal
-    field :cost, :decimal
-    field :tax_rate, :decimal, default: Decimal.new("19.00")
-    field :stock, :integer, default: 0
-    field :min_stock, :integer, default: 0
-    field :active, :boolean, default: true
-    field :deleted_at, :utc_datetime
+    field(:tenant_id, :binary_id)
+    field(:sku, :string)
+    field(:name, :string)
+    field(:description, :string)
+    field(:unit, :string, default: "UN")
+    field(:price, :decimal)
+    field(:cost, :decimal)
+    field(:tax_rate, :decimal, default: Decimal.new("19.00"))
+    field(:stock, :integer, default: 0)
+    field(:min_stock, :integer, default: 0)
+    # Un servicio no lleva inventario (P-17): su venta no mueve kardex.
+    field(:tracks_stock, :boolean, default: true)
+    field(:active, :boolean, default: true)
+    field(:deleted_at, :utc_datetime)
 
     timestamps(type: :utc_datetime)
   end
@@ -38,6 +40,7 @@ defmodule KuboErp.Catalog.Product do
       :cost,
       :tax_rate,
       :min_stock,
+      :tracks_stock,
       :active
     ])
     |> validate_required([:sku, :name, :price])

@@ -219,15 +219,18 @@ defmodule KuboErp.Sales do
                 :ok
 
               product ->
-                case Catalog.move_stock(product, item.quantity,
-                       kind: "IN",
-                       reason: "Anulacion de la venta #{sale.number}",
-                       reference_type: "VOID",
-                       reference_id: sale.id,
-                       created_by: user_id
-                     ) do
-                  {:ok, _product, _movement} -> :ok
-                  {:error, reason} -> Repo.rollback(reason)
+                # Un servicio no devuelve inventario porque nunca lo descontó.
+                if product.tracks_stock do
+                  case Catalog.move_stock(product, item.quantity,
+                         kind: "IN",
+                         reason: "Anulacion de la venta #{sale.number}",
+                         reference_type: "VOID",
+                         reference_id: sale.id,
+                         created_by: user_id
+                       ) do
+                    {:ok, _product, _movement} -> :ok
+                    {:error, reason} -> Repo.rollback(reason)
+                  end
                 end
             end
           end)
@@ -270,7 +273,8 @@ defmodule KuboErp.Sales do
             Repo.rollback(:product_not_found)
 
           product ->
-            if product.stock < item.quantity do
+            # Un servicio no lleva inventario (P-17): no se exige existencia.
+            if product.tracks_stock and product.stock < item.quantity do
               Repo.rollback({:insufficient_stock, product})
             end
 
@@ -293,6 +297,7 @@ defmodule KuboErp.Sales do
         tax: totals.tax,
         total: totals.total,
         notes: attrs["notes"],
+        table_number: attrs["table_number"],
         sold_by: user_id,
         # La venta se liga al turno de caja abierto: el arqueo suma exactamente
         # las ventas de la sesion (P-16).
@@ -341,15 +346,20 @@ defmodule KuboErp.Sales do
         {:error, changeset} -> Repo.rollback(changeset)
       end
 
-    case Catalog.move_stock(product, -item.quantity,
-           kind: "OUT",
-           reason: "Venta #{sale.number}",
-           reference_type: "SALE",
-           reference_id: sale.id,
-           created_by: user_id
-         ) do
-      {:ok, _product, _movement} -> sale_item
-      {:error, reason} -> Repo.rollback(reason)
+    # Un servicio no mueve kardex (P-17); el item igual queda en la venta.
+    if product.tracks_stock do
+      case Catalog.move_stock(product, -item.quantity,
+             kind: "OUT",
+             reason: "Venta #{sale.number}",
+             reference_type: "SALE",
+             reference_id: sale.id,
+             created_by: user_id
+           ) do
+        {:ok, _product, _movement} -> sale_item
+        {:error, reason} -> Repo.rollback(reason)
+      end
+    else
+      sale_item
     end
   end
 
