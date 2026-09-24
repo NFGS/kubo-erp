@@ -60,18 +60,30 @@ subtotal = total − impuesto
 Se usa `Decimal` en todo el cálculo (nunca coma flotante) y las funciones
 `Sales.line_amounts/3` y `Sales.totals/1` son puras: se prueban sin base de datos.
 
-## Eventos
+## Eventos y outbox transaccional
 
-Al confirmar una venta se publica `sale.created` (versión 1) en el exchange
-`kubo.events` de RabbitMQ, con sobre estable (`event_id`, `event_type`,
-`version`, `occurred_at`, `tenant_id`, `data`). La publicación es asíncrona y
-**no bloquea la venta**: si el bus está caído, se registra la advertencia y el
-negocio continúa.
+Al confirmar una venta, el evento `sale.created` (versión 1) se guarda en
+`outbox_events` **en la misma transacción de la venta** (sobre estable:
+`event_id`, `event_type`, `version`, `occurred_at`, `tenant_id`, `data`). Un
+publicador de barrido lo entrega después a RabbitMQ (exchange `kubo.events`):
+si el bus está caído, el evento espera en la bandeja y se entrega al volver. La
+caja nunca depende del bus y un evento confirmado no se pierde (ADR-0009;
+`make bus-drill` lo verifica). La sonda de salud expone
+`outbox: {pending, published, failed}`.
 
 ## Pruebas
 
+Las pruebas son puras (aritmética de dinero y outbox) y no necesitan base de
+datos. La imagen de ejecución no incluye `test/` y el contenedor de producción se
+queda sin memoria al compilar el entorno de pruebas, así que se ejecutan con 3 GB
+y el directorio montado:
+
 ```bash
-mix test test/kubo_erp/sales_totals_test.exs
+docker run --rm -m 3g -e MIX_ENV=test \
+  -v "$PWD/test:/app/test:ro" --entrypoint bash kubo-kubo-erp \
+  -c "cd /app && mix compile >/dev/null 2>&1 && ERL_LIBS=/app/_build/test/lib \
+      elixir -e 'ExUnit.start(); Code.require_file(\"test/kubo_erp/sales_totals_test.exs\"); \
+      Code.require_file(\"test/kubo_erp/outbox_test.exs\")'"
 ```
 
 ## Decisiones de diseño
@@ -83,3 +95,8 @@ mix test test/kubo_erp/sales_totals_test.exs
   datos; el histórico no depende de la disponibilidad de otro servicio.
 - **El número de venta** se calcula dentro de la transacción y el índice único
   `(tenant_id, number)` protege la secuencia; ante una colisión se reintenta.
+- **Aislamiento impuesto por el motor**: RLS activo con `FORCE`; el interceptor
+  `action/2` fija `app.tenant_id` por petición y las operaciones de negocio usan
+  savepoints (`Repo.scoped_transaction/1`) para que un rollback de negocio no
+  aborte la transacción externa (ADR-0010). `outbox_events` queda fuera de RLS a
+  propósito: es la tabla operativa que el publicador lee cruzando negocios.

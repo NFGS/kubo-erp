@@ -4,8 +4,10 @@ defmodule KuboErp.Sales do
 
   La venta es una operacion **transaccional** que: bloquea los productos
   implicados, valida existencias, inserta la venta y su detalle, descuenta el
-  inventario y deja el rastro en el kardex. Al confirmarse, publica el evento
-  `sale.created` para que analitica y notificaciones reaccionen sin acoplarse.
+  inventario, deja el rastro en el kardex y guarda el evento `sale.created` en
+  la bandeja de salida. Venta y evento se confirman juntos: si la transaccion
+  se revierte, no queda un evento de algo que no ocurrio, y si se confirma, el
+  evento se entregara aunque el bus este caido (patron *transactional outbox*).
   """
 
   import Ecto.Query
@@ -14,7 +16,7 @@ defmodule KuboErp.Sales do
   alias KuboErp.{Catalog, Repo}
   alias KuboErp.Catalog.Product
   alias KuboErp.Sales.{Sale, SaleItem}
-  alias KuboErp.Events.{Publisher, SaleCreated}
+  alias KuboErp.Events.{Outbox, Publisher, SaleCreated}
 
   @default_tax_rate Decimal.new("19.00")
   @max_results 200
@@ -62,7 +64,12 @@ defmodule KuboErp.Sales do
         Repo.one(
           from(s in completed,
             where:
-              fragment("(? AT TIME ZONE 'UTC' AT TIME ZONE ?)::date = ?", s.inserted_at, ^timezone, ^today),
+              fragment(
+                "(? AT TIME ZONE 'UTC' AT TIME ZONE ?)::date = ?",
+                s.inserted_at,
+                ^timezone,
+                ^today
+              ),
             select: coalesce(sum(s.total), 0)
           )
         )
@@ -71,7 +78,12 @@ defmodule KuboErp.Sales do
         Repo.aggregate(
           from(s in completed,
             where:
-              fragment("(? AT TIME ZONE 'UTC' AT TIME ZONE ?)::date = ?", s.inserted_at, ^timezone, ^today)
+              fragment(
+                "(? AT TIME ZONE 'UTC' AT TIME ZONE ?)::date = ?",
+                s.inserted_at,
+                ^timezone,
+                ^today
+              )
           ),
           :count
         ),
@@ -163,7 +175,7 @@ defmodule KuboErp.Sales do
         {:error, :already_voided}
 
       %Sale{} = sale ->
-        Repo.transaction(fn ->
+        Repo.scoped_transaction(fn ->
           products = lock_products(tenant_id, Enum.map(sale.items, & &1.product_id))
 
           Enum.each(sale.items, fn item ->
@@ -200,9 +212,9 @@ defmodule KuboErp.Sales do
   # ---------------------------------------------------------------------------
 
   defp do_create_sale(tenant_id, user_id, attrs, items, attempt) do
-    case Repo.transaction(fn -> insert_sale(tenant_id, user_id, attrs, items) end) do
+    case Repo.scoped_transaction(fn -> insert_sale(tenant_id, user_id, attrs, items) end) do
       {:ok, {sale, sale_items}} ->
-        Publisher.publish(SaleCreated.build(sale, sale_items))
+        Publisher.kick()
         {:ok, %{sale | items: sale_items}}
 
       {:error, :number_conflict} when attempt < @number_retries ->
@@ -254,6 +266,10 @@ defmodule KuboErp.Sales do
       Enum.map(prepared, fn {product, item, tax_rate, amounts} ->
         insert_item_and_move_stock(sale, product, item, tax_rate, amounts, user_id)
       end)
+
+    # El evento entra en la MISMA transaccion de la venta (outbox). Si algo
+    # revierte, el evento desaparece con ella; si confirma, ya no se pierde.
+    Outbox.enqueue(SaleCreated.build(sale, sale_items))
 
     {sale, sale_items}
   end

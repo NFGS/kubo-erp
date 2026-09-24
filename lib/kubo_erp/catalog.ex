@@ -95,30 +95,33 @@ defmodule KuboErp.Catalog do
     with {:ok, uuid} <- cast_uuid(product_id),
          {:ok, quantity} <- parse_quantity(attrs["quantity"]),
          kind when kind in ["IN", "OUT", "ADJUST"] <- attrs["kind"] do
-      Repo.transaction(fn ->
-        case lock_product(tenant_id, uuid) do
-          nil ->
-            Repo.rollback(:product_not_found)
+      case Repo.scoped_transaction(fn ->
+             case lock_product(tenant_id, uuid) do
+               nil ->
+                 Repo.rollback(:product_not_found)
 
-          product ->
-            delta =
-              case kind do
-                "IN" -> quantity
-                "OUT" -> -quantity
-                "ADJUST" -> quantity - product.stock
-              end
+               product ->
+                 delta =
+                   case kind do
+                     "IN" -> quantity
+                     "OUT" -> -quantity
+                     "ADJUST" -> quantity - product.stock
+                   end
 
-            case move_stock(product, delta,
-                   kind: kind,
-                   reason: attrs["reason"] || "Ajuste manual",
-                   reference_type: "MANUAL",
-                   created_by: user_id
-                 ) do
-              {:ok, updated, movement} -> {updated, movement}
-              {:error, reason} -> Repo.rollback(reason)
-            end
-        end
-      end)
+                 case move_stock(product, delta,
+                        kind: kind,
+                        reason: attrs["reason"] || "Ajuste manual",
+                        reference_type: "MANUAL",
+                        created_by: user_id
+                      ) do
+                   {:ok, updated, movement} -> {updated, movement}
+                   {:error, reason} -> Repo.rollback(reason)
+                 end
+             end
+           end) do
+        {:ok, {product, movement}} -> {:ok, product, movement}
+        {:error, reason} -> {:error, reason}
+      end
     else
       :error -> {:error, :invalid_product_id}
       {:error, reason} -> {:error, reason}

@@ -42,6 +42,44 @@ defmodule KuboErpWeb do
       import Plug.Conn
 
       unquote(verified_routes())
+
+      # Interceptor de tenant (P-02): cada accion de negocio corre dentro de una
+      # transaccion con `app.tenant_id` fijado, de modo que la politica de RLS
+      # filtre por negocio aunque una consulta olvide el `where`. Las acciones
+      # publicas (sonda de salud) no traen tenant y se ejecutan sin transaccion.
+      def action(conn, _opts) do
+        case conn.assigns[:tenant_id] do
+          nil ->
+            apply(__MODULE__, action_name(conn), [conn, conn.params])
+
+          tenant_id ->
+            result =
+              KuboErp.Repo.transaction(fn ->
+                KuboErp.Repo.query!("select set_config('app.tenant_id', $1, true)", [tenant_id])
+                apply(__MODULE__, action_name(conn), [conn, conn.params])
+              end)
+
+            case result do
+              {:ok, conn} ->
+                conn
+
+              {:error, reason} when conn.state == :sent ->
+                # El controlador ya respondio (por ejemplo, un 409 de negocio) y
+                # su rollback aborto la transaccion externa: la respuesta es
+                # valida y no hay nada que revertir.
+                require Logger
+
+                Logger.warning(
+                  "Transaccion de tenant revertida tras responder: #{inspect(reason)}"
+                )
+
+                conn
+
+              {:error, reason} ->
+                raise "transaccion de tenant fallida: #{inspect(reason)}"
+            end
+        end
+      end
     end
   end
 

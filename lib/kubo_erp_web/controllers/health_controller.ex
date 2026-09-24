@@ -4,6 +4,7 @@ defmodule KuboErpWeb.HealthController do
   use KuboErpWeb, :controller
 
   alias KuboErp.Repo
+  alias KuboErp.Events.Outbox
 
   def show(conn, _params) do
     database =
@@ -14,11 +15,19 @@ defmodule KuboErpWeb.HealthController do
         _error -> "DOWN"
       end
 
+    outbox =
+      if(database == "UP", do: Outbox.stats(), else: %{pending: nil, published: nil, failed: nil})
+
     json(conn, %{
       status: if(database == "UP", do: "UP", else: "DEGRADED"),
       service: "kubo-erp",
       db: database,
-      events: if(Application.get_env(:kubo_erp, :amqp_url) in [nil, ""], do: "DISABLED", else: "ENABLED"),
+      events:
+        if(Application.get_env(:kubo_erp, :amqp_url) in [nil, ""],
+          do: "DISABLED",
+          else: "ENABLED"
+        ),
+      outbox: outbox,
       time: DateTime.utc_now() |> DateTime.to_iso8601()
     })
   end
