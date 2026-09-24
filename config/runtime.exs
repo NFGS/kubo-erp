@@ -32,6 +32,19 @@ config :kubo_erp, :amqp_url, System.get_env("AMQP_URL")
 # posteriores a las 19:00 pertenecen al dia anterior en UTC.
 config :kubo_erp, :timezone, System.get_env("KUBO_TIMEZONE", "America/Bogota")
 
+# Trazas OTLP hacia el collector (P-07). Sin endpoint configurado, la
+# aplicacion arranca sin exportar: la observabilidad nunca es un requisito para
+# vender.
+if otlp_endpoint = System.get_env("OTEL_EXPORTER_OTLP_ENDPOINT") do
+  config :opentelemetry,
+    resource: %{service: %{name: "kubo-erp"}},
+    traces_exporter: :otlp
+
+  config :opentelemetry_exporter,
+    otlp_protocol: :http_protobuf,
+    otlp_endpoint: otlp_endpoint
+end
+
 if config_env() == :prod do
   database_url =
     System.get_env("DATABASE_URL") ||

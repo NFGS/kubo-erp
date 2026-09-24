@@ -47,7 +47,14 @@ defmodule KuboErp.MixProject do
       {:telemetry_poller, "~> 1.0"},
       {:jason, "~> 1.2"},
       {:amqp, "~> 4.2"},
-      {:bandit, "~> 1.5"}
+      {:bandit, "~> 1.5"},
+      # Trazas OpenTelemetry (P-07): SDK, exportador OTLP e instrumentacion de
+      # Phoenix y Ecto.
+      {:opentelemetry, "~> 1.5"},
+      {:opentelemetry_api, "~> 1.4"},
+      {:opentelemetry_exporter, "~> 1.8"},
+      {:opentelemetry_phoenix, "~> 2.0"},
+      {:opentelemetry_ecto, "~> 1.2"}
     ]
   end
 

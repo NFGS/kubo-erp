@@ -13,13 +13,12 @@ defmodule KuboErp.Sales do
   import Ecto.Query
 
   alias Ecto.Changeset
-  alias KuboErp.{Catalog, Repo}
+  alias KuboErp.{Catalog, Pagination, Repo}
   alias KuboErp.Catalog.Product
   alias KuboErp.Sales.{Sale, SaleItem}
   alias KuboErp.Events.{Outbox, Publisher, SaleCreated}
 
   @default_tax_rate Decimal.new("19.00")
-  @max_results 200
   @number_retries 3
 
   # ---------------------------------------------------------------------------
@@ -27,13 +26,26 @@ defmodule KuboErp.Sales do
   # ---------------------------------------------------------------------------
 
   def list_sales(tenant_id, opts \\ []) do
-    Sale
-    |> where([s], s.tenant_id == ^tenant_id)
-    |> filter_status(opts[:status])
+    {limit, offset} = Pagination.normalize(opts)
+
+    tenant_id
+    |> sales_query(opts[:status])
     |> order_by([s], desc: s.inserted_at)
-    |> limit(^Keyword.get(opts, :limit, @max_results))
+    |> limit(^limit)
+    |> offset(^offset)
     |> preload(:items)
     |> Repo.all()
+  end
+
+  @doc "Total real de ventas que cumplen el filtro (para paginar en la interfaz)."
+  def count_sales(tenant_id, status \\ nil) do
+    tenant_id |> sales_query(status) |> Repo.aggregate(:count)
+  end
+
+  defp sales_query(tenant_id, status) do
+    Sale
+    |> where([s], s.tenant_id == ^tenant_id)
+    |> filter_status(status)
   end
 
   def get_sale(_tenant_id, nil), do: nil
@@ -250,7 +262,6 @@ defmodule KuboErp.Sales do
     sale =
       insert_sale_record(%{
         tenant_id: tenant_id,
-        number: next_number(tenant_id),
         customer_id: cast_uuid(attrs["customer_id"]),
         customer_name: attrs["customer_name"],
         payment_method: attrs["payment_method"] || "CASH",
@@ -275,16 +286,13 @@ defmodule KuboErp.Sales do
   end
 
   defp insert_sale_record(attrs) do
-    case %Sale{} |> Sale.changeset(attrs) |> Repo.insert() do
-      {:ok, sale} ->
-        sale
+    changeset =
+      %Sale{}
+      |> Sale.changeset(Map.put(attrs, :number, next_number(attrs.tenant_id)))
 
-      {:error, changeset} ->
-        if Keyword.has_key?(changeset.errors, :number) do
-          Repo.rollback(:number_conflict)
-        else
-          Repo.rollback(changeset)
-        end
+    case Repo.insert(changeset) do
+      {:ok, sale} -> sale
+      {:error, changeset} -> Repo.rollback(changeset)
     end
   end
 
@@ -293,6 +301,7 @@ defmodule KuboErp.Sales do
       case %SaleItem{}
            |> SaleItem.changeset(%{
              sale_id: sale.id,
+             tenant_id: sale.tenant_id,
              product_id: product.id,
              product_name: product.name,
              quantity: item.quantity,
@@ -331,21 +340,26 @@ defmodule KuboErp.Sales do
   @doc """
   Siguiente numero de venta del negocio.
 
-  Se usa el **maximo** del consecutivo (no un conteo): el indice unico
-  `(tenant_id, number)` lo resuelve en tiempo logaritmico, mientras que un
-  `COUNT(*)` recorre todas las ventas del negocio en cada operacion. Si dos cajas
-  coinciden, la restriccion unica lo detecta y la venta se reintenta.
+  Se toma de `tenant_counters` con un UPSERT atomico: el contador se incrementa
+  y devuelve en una sola sentencia, sin leer el maximo ni reintentar. La fila
+  queda bloqueada hasta el final de la transaccion, de modo que dos cajas nunca
+  obtienen el mismo numero. El indice unico `(tenant_id, number)` sigue ahi como
+  red de seguridad.
   """
   defp next_number(tenant_id) do
-    last =
-      Repo.one(
-        from(s in Sale,
-          where: s.tenant_id == ^tenant_id,
-          select: max(fragment("NULLIF(regexp_replace(?, '\\D', '', 'g'), '')::bigint", s.number))
-        )
+    %{rows: [[sequence]]} =
+      Repo.query!(
+        """
+        INSERT INTO tenant_counters (tenant_id, sale_seq)
+        VALUES ($1, 1)
+        ON CONFLICT (tenant_id)
+        DO UPDATE SET sale_seq = tenant_counters.sale_seq + 1
+        RETURNING sale_seq
+        """,
+        [Ecto.UUID.dump!(tenant_id)]
       )
 
-    "V-" <> String.pad_leading(Integer.to_string((last || 0) + 1), 6, "0")
+    "V-" <> String.pad_leading(Integer.to_string(sequence), 6, "0")
   end
 
   defp normalize_items(items) when is_list(items) do

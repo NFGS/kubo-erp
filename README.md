@@ -100,3 +100,15 @@ docker run --rm -m 3g -e MIX_ENV=test \
   savepoints (`Repo.scoped_transaction/1`) para que un rollback de negocio no
   aborte la transacción externa (ADR-0010). `outbox_events` queda fuera de RLS a
   propósito: es la tabla operativa que el publicador lee cruzando negocios.
+
+## Observabilidad y calidad (Fase 2)
+
+- **Numeración atómica**: `tenant_counters` entrega el consecutivo con un UPSERT
+  (`ON CONFLICT DO UPDATE … RETURNING`); sin conflictos ni reintentos, y sin
+  lecturas del máximo bajo concurrencia. `sale_items.tenant_id` está
+  denormalizado para que su política de RLS sea una comparación por índice.
+- **Trazas OpenTelemetry**: `opentelemetry_phoenix` (adaptador Bandit) y
+  `opentelemetry_ecto` se enganchan al arrancar si hay collector; el exportador
+  OTLP usa HTTP/protobuf.
+- **Pruebas**: dinero, outbox y paginación son funciones puras; se ejecutan sin
+  base de datos con `./kubo-infra/scripts/erp-tests.sh`.

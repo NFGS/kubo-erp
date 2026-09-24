@@ -43,41 +43,34 @@ defmodule KuboErpWeb do
 
       unquote(verified_routes())
 
-      # Interceptor de tenant (P-02): cada accion de negocio corre dentro de una
-      # transaccion con `app.tenant_id` fijado, de modo que la politica de RLS
-      # filtre por negocio aunque una consulta olvide el `where`. Las acciones
-      # publicas (sonda de salud) no traen tenant y se ejecutan sin transaccion.
+      # Interceptor de tenant (P-02): fija `app.tenant_id` en la conexion que
+      # atiende la peticion, de modo que la politica de RLS filtre por negocio
+      # aunque una consulta olvide el `where`.
+      #
+      # Se usa `checkout` (conexion reservada) y no una transaccion externa: en
+      # esta version de Ecto, `Repo.rollback` solo es valido en una transaccion
+      # real (`conn_mode: :transaction`), no dentro de un savepoint. Envolver la
+      # peticion en una transaccion convertiria cada rollback de negocio (stock
+      # insuficiente, numero de venta) en una peticion fallida.
+      #
+      # La marca es de sesion y se limpia siempre en `after`; ademas cada
+      # peticion de negocio la vuelve a fijar antes de consultar, de modo que un
+      # valor filtrado por una muerte abrupta no puede afectar a otra peticion.
       def action(conn, _opts) do
         case conn.assigns[:tenant_id] do
           nil ->
             apply(__MODULE__, action_name(conn), [conn, conn.params])
 
           tenant_id ->
-            result =
-              KuboErp.Repo.transaction(fn ->
-                KuboErp.Repo.query!("select set_config('app.tenant_id', $1, true)", [tenant_id])
+            KuboErp.Repo.checkout(fn ->
+              KuboErp.Repo.query!("select set_config('app.tenant_id', $1, false)", [tenant_id])
+
+              try do
                 apply(__MODULE__, action_name(conn), [conn, conn.params])
-              end)
-
-            case result do
-              {:ok, conn} ->
-                conn
-
-              {:error, reason} when conn.state == :sent ->
-                # El controlador ya respondio (por ejemplo, un 409 de negocio) y
-                # su rollback aborto la transaccion externa: la respuesta es
-                # valida y no hay nada que revertir.
-                require Logger
-
-                Logger.warning(
-                  "Transaccion de tenant revertida tras responder: #{inspect(reason)}"
-                )
-
-                conn
-
-              {:error, reason} ->
-                raise "transaccion de tenant fallida: #{inspect(reason)}"
-            end
+              after
+                KuboErp.Repo.query!("select set_config('app.tenant_id', '', false)")
+              end
+            end)
         end
       end
     end

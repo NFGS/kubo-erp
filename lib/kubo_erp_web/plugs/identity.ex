@@ -5,10 +5,17 @@ defmodule KuboErpWeb.Plugs.Identity do
   Este servicio no valida firmas: solo es alcanzable en la red privada de
   contenedores y el gateway elimina cualquier cabecera `X-User-*` enviada por el
   cliente antes de inyectar la identidad real.
+
+  Ademas del control de presencia, se valida el **formato UUID** de las
+  cabeceras: un valor malformado no debe llegar a `set_config('app.tenant_id')`
+  ni a la numeracion, donde provocaria un error de conversion (500) en lugar de
+  una respuesta clara.
   """
 
   import Plug.Conn
   import Phoenix.Controller, only: [json: 2]
+
+  @uuid_regex ~r/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/
 
   def init(opts), do: opts
 
@@ -16,17 +23,26 @@ defmodule KuboErpWeb.Plugs.Identity do
     tenant_id = header(conn, "x-tenant-id")
     user_id = header(conn, "x-user-id")
 
-    if present?(tenant_id) do
-      conn
-      |> assign(:tenant_id, tenant_id)
-      |> assign(:user_id, user_id)
-      |> assign(:user_role, header(conn, "x-user-role"))
-    else
-      conn
-      |> put_status(:unauthorized)
-      |> json(%{code: "UNAUTHENTICATED", message: "La peticion no trae identidad verificada"})
-      |> halt()
+    cond do
+      not present?(tenant_id) ->
+        error(conn, :unauthorized, "UNAUTHENTICATED", "La peticion no trae identidad verificada")
+
+      not Regex.match?(@uuid_regex, tenant_id) ->
+        error(conn, :bad_request, "INVALID_TENANT", "El negocio indicado no es valido")
+
+      present?(user_id) and not Regex.match?(@uuid_regex, user_id) ->
+        error(conn, :bad_request, "INVALID_USER", "El usuario indicado no es valido")
+
+      true ->
+        conn
+        |> assign(:tenant_id, tenant_id)
+        |> assign(:user_id, user_id)
+        |> assign(:user_role, header(conn, "x-user-role"))
     end
+  end
+
+  defp error(conn, status, code, message) do
+    conn |> put_status(status) |> json(%{code: code, message: message}) |> halt()
   end
 
   defp header(conn, name) do

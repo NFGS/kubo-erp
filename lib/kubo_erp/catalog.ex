@@ -8,23 +8,34 @@ defmodule KuboErp.Catalog do
 
   import Ecto.Query
 
-  alias KuboErp.Repo
+  alias KuboErp.{Pagination, Repo}
   alias KuboErp.Catalog.{Product, StockMovement}
-
-  @max_results 300
 
   # ---------------------------------------------------------------------------
   # Consultas
   # ---------------------------------------------------------------------------
 
   def list_products(tenant_id, filters \\ %{}) do
+    {limit, offset} = Pagination.normalize(filters)
+
+    tenant_id
+    |> products_query(filters)
+    |> order_by([p], asc: p.name)
+    |> limit(^limit)
+    |> offset(^offset)
+    |> Repo.all()
+  end
+
+  @doc "Total real de productos que cumplen el filtro (para paginar en la interfaz)."
+  def count_products(tenant_id, filters \\ %{}) do
+    tenant_id |> products_query(filters) |> Repo.aggregate(:count)
+  end
+
+  defp products_query(tenant_id, filters) do
     Product
     |> where([p], p.tenant_id == ^tenant_id and is_nil(p.deleted_at))
     |> filter_by_query(filters["q"])
     |> filter_low_stock(filters["low_stock"])
-    |> order_by([p], asc: p.name)
-    |> limit(@max_results)
-    |> Repo.all()
   end
 
   def get_product(_tenant_id, nil), do: nil
@@ -56,13 +67,26 @@ defmodule KuboErp.Catalog do
     }
   end
 
-  def list_movements(tenant_id, product_id \\ nil, limit \\ 100) do
+  def list_movements(tenant_id, product_id \\ nil, opts \\ []) do
+    {limit, offset} = Pagination.normalize(opts)
+
+    tenant_id
+    |> movements_query(product_id)
+    |> order_by([m], desc: m.inserted_at)
+    |> limit(^limit)
+    |> offset(^offset)
+    |> Repo.all()
+  end
+
+  @doc "Total real de movimientos del kardex que cumplen el filtro."
+  def count_movements(tenant_id, product_id \\ nil) do
+    tenant_id |> movements_query(product_id) |> Repo.aggregate(:count)
+  end
+
+  defp movements_query(tenant_id, product_id) do
     StockMovement
     |> where([m], m.tenant_id == ^tenant_id)
     |> filter_product(product_id)
-    |> order_by([m], desc: m.inserted_at)
-    |> limit(^limit)
-    |> Repo.all()
   end
 
   # ---------------------------------------------------------------------------

@@ -1,0 +1,20 @@
+include:
+  - template: Security/SAST.gitlab-ci.yml
+  - template: Security/Secret-Detection.gitlab-ci.yml
+
+stages: [test]
+
+erp:test:
+  stage: test
+  image: elixir:1.17
+  variables:
+    MIX_ENV: test
+  cache:
+    key: erp-deps
+    paths: [deps, _build]
+  script:
+    - mix local.hex --force
+    - mix local.rebar --force
+    - mix deps.get
+    - mix compile
+    - ERL_LIBS=_build/test/lib elixir -e 'ExUnit.start(); Code.require_file("test/kubo_erp/sales_totals_test.exs"); Code.require_file("test/kubo_erp/outbox_test.exs"); Code.require_file("test/kubo_erp/pagination_test.exs")'

@@ -3,8 +3,13 @@ defmodule KuboErpWeb.ProductJSON do
 
   alias KuboErp.Catalog.Product
 
-  def index(%{products: products}) do
-    %{data: Enum.map(products, &data/1), total: length(products)}
+  def index(%{products: products, total: total, limit: limit, offset: offset}) do
+    %{
+      data: Enum.map(products, &data/1),
+      total: total,
+      limit: limit,
+      offset: offset
+    }
   end
 
   def show(%{product: product}), do: %{data: data(product)}

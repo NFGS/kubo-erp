@@ -1,8 +1,13 @@
 defmodule KuboErpWeb.SaleJSON do
   @moduledoc "Representacion JSON de ventas y su detalle."
 
-  def index(%{sales: sales}) do
-    %{data: Enum.map(sales, &data/1), total: length(sales)}
+  def index(%{sales: sales, total: total, limit: limit, offset: offset}) do
+    %{
+      data: Enum.map(sales, &data/1),
+      total: total,
+      limit: limit,
+      offset: offset
+    }
   end
 
   def show(%{sale: sale}), do: %{data: data(sale)}

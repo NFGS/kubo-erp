@@ -3,11 +3,14 @@ defmodule KuboErpWeb.ProductController do
 
   use KuboErpWeb, :controller
 
-  alias KuboErp.Catalog
+  alias KuboErp.{Catalog, Pagination}
 
   def index(conn, params) do
+    {limit, offset} = Pagination.normalize(params)
     products = Catalog.list_products(conn.assigns.tenant_id, params)
-    render(conn, :index, products: products)
+    total = Catalog.count_products(conn.assigns.tenant_id, params)
+
+    render(conn, :index, products: products, total: total, limit: limit, offset: offset)
   end
 
   def stats(conn, _params) do

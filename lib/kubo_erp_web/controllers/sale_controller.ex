@@ -3,11 +3,16 @@ defmodule KuboErpWeb.SaleController do
 
   use KuboErpWeb, :controller
 
-  alias KuboErp.Sales
+  alias KuboErp.{Pagination, Sales}
 
   def index(conn, params) do
-    sales = Sales.list_sales(conn.assigns.tenant_id, status: params["status"], limit: 100)
-    render(conn, :index, sales: sales)
+    {limit, offset} = Pagination.normalize(params)
+    status = params["status"]
+
+    sales = Sales.list_sales(conn.assigns.tenant_id, status: status, limit: limit, offset: offset)
+    total = Sales.count_sales(conn.assigns.tenant_id, status)
+
+    render(conn, :index, sales: sales, total: total, limit: limit, offset: offset)
   end
 
   def stats(conn, _params) do
@@ -29,10 +34,20 @@ defmodule KuboErpWeb.SaleController do
         conn |> put_status(:created) |> render(:show, sale: sale)
 
       {:error, :empty_items} ->
-        error(conn, :unprocessable_entity, "EMPTY_SALE", "La venta debe incluir al menos un producto")
+        error(
+          conn,
+          :unprocessable_entity,
+          "EMPTY_SALE",
+          "La venta debe incluir al menos un producto"
+        )
 
       {:error, :product_not_found} ->
-        error(conn, :unprocessable_entity, "PRODUCT_NOT_FOUND", "Alguno de los productos no existe")
+        error(
+          conn,
+          :unprocessable_entity,
+          "PRODUCT_NOT_FOUND",
+          "Alguno de los productos no existe"
+        )
 
       {:error, {:insufficient_stock, product}} ->
         error(
@@ -43,7 +58,12 @@ defmodule KuboErpWeb.SaleController do
         )
 
       {:error, :number_conflict} ->
-        error(conn, :conflict, "NUMBER_CONFLICT", "No fue posible asignar el numero de venta, reintente")
+        error(
+          conn,
+          :conflict,
+          "NUMBER_CONFLICT",
+          "No fue posible asignar el numero de venta, reintente"
+        )
 
       {:error, changeset} ->
         error(conn, :unprocessable_entity, "VALIDATION_ERROR", inspect(changeset.errors))

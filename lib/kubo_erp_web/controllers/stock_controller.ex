@@ -3,11 +3,18 @@ defmodule KuboErpWeb.StockController do
 
   use KuboErpWeb, :controller
 
-  alias KuboErp.Catalog
+  alias KuboErp.{Catalog, Pagination}
 
   def index(conn, params) do
-    movements = Catalog.list_movements(conn.assigns.tenant_id, params["product_id"])
-    render(conn, :movements, movements: movements)
+    {limit, offset} = Pagination.normalize(params)
+    product_id = params["product_id"]
+
+    movements =
+      Catalog.list_movements(conn.assigns.tenant_id, product_id, limit: limit, offset: offset)
+
+    total = Catalog.count_movements(conn.assigns.tenant_id, product_id)
+
+    render(conn, :movements, movements: movements, total: total, limit: limit, offset: offset)
   end
 
   def adjust(conn, %{"id" => id} = params) do
@@ -21,7 +28,12 @@ defmodule KuboErpWeb.StockController do
         error(conn, :not_found, "PRODUCT_NOT_FOUND", "El producto no existe")
 
       {:error, :invalid_quantity} ->
-        error(conn, :bad_request, "INVALID_QUANTITY", "La cantidad debe ser un entero mayor que cero")
+        error(
+          conn,
+          :bad_request,
+          "INVALID_QUANTITY",
+          "La cantidad debe ser un entero mayor que cero"
+        )
 
       {:error, :invalid_kind} ->
         error(conn, :bad_request, "INVALID_KIND", "El tipo debe ser IN, OUT o ADJUST")

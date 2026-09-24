@@ -7,8 +7,13 @@ defmodule KuboErpWeb.StockJSON do
   `ProductJSON`.
   """
 
-  def movements(%{movements: movements}) do
-    %{data: Enum.map(movements, &movement_data/1), total: length(movements)}
+  def movements(%{movements: movements, total: total, limit: limit, offset: offset}) do
+    %{
+      data: Enum.map(movements, &movement_data/1),
+      total: total,
+      limit: limit,
+      offset: offset
+    }
   end
 
   def stock(%{product: product, movement: movement}) do
