@@ -38,6 +38,10 @@ defmodule KuboErpWeb.Router do
     post("/purchases/:id/void", PurchaseController, :void)
     resources("/purchases", PurchaseController, only: [:index, :show, :create])
 
+    # Paquetes de configuracion por vertical (P-17).
+    get("/packs", PackController, :index)
+    get("/packs/current", PackController, :current)
+
     # Reportes exportables (P-21).
     get("/reports/sales.csv", ReportController, :sales)
     get("/reports/inventory.csv", ReportController, :inventory)
