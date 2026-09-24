@@ -21,6 +21,7 @@ defmodule KuboErpWeb.Router do
     pipe_through([:api, :authenticated])
 
     get("/products/stats", ProductController, :stats)
+    post("/products/import", ProductController, :import)
     resources("/products", ProductController, except: [:new, :edit])
 
     get("/stock/movements", StockController, :index)
