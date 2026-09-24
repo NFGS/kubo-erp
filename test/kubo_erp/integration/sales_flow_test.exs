@@ -13,7 +13,7 @@ defmodule KuboErp.Integration.SalesFlowTest do
 
   use KuboErp.DataCase, async: false
 
-  alias KuboErp.{Catalog, Repo, Sales}
+  alias KuboErp.{Catalog, Invoices, Repo, Sales}
 
   setup do
     tenant = Ecto.UUID.generate()
@@ -45,6 +45,37 @@ defmodule KuboErp.Integration.SalesFlowTest do
     assert contar("sales", tenant) == 1
     assert contar_eventos(venta.id) == 1
     assert contar("stock_movements", tenant) == 2
+  end
+
+  test "la factura se emite una sola vez y queda aislada por negocio (P-18)", %{
+    tenant: tenant,
+    producto: producto
+  } do
+    venta = vender(tenant, producto, 1)
+    negocio = %{id: tenant, name: "Tienda Integracion"}
+
+    {:ok, factura} = como_tenant(tenant, fn -> Invoices.issue(tenant, venta.id, negocio) end)
+    assert String.match?(factura.cufe, ~r/^[0-9a-f]{96}$/)
+    assert factura.xml =~ "<cbc:UBLVersionID>UBL 2.1</cbc:UBLVersionID>"
+
+    {:ok, repetida} = como_tenant(tenant, fn -> Invoices.issue(tenant, venta.id, negocio) end)
+    assert repetida.id == factura.id, "emitir dos veces devuelve la misma factura"
+
+    # RLS: otro negocio no ve la factura.
+    otro = Ecto.UUID.generate()
+    assert como_tenant(otro, fn -> Invoices.get_by_sale(otro, venta.id) end) == nil
+  end
+
+  test "una venta anulada no se factura (P-18)", %{tenant: tenant, producto: producto} do
+    venta = vender(tenant, producto, 1)
+
+    {:ok, _anulada} =
+      como_tenant(tenant, fn -> Sales.void_sale(tenant, Ecto.UUID.generate(), venta.id) end)
+
+    assert {:error, :sale_voided} =
+             como_tenant(tenant, fn ->
+               Invoices.issue(tenant, venta.id, %{id: tenant, name: "Tienda"})
+             end)
   end
 
   test "el paquete siembra un catalogo de arranque idempotente (P-17)", %{tenant: tenant} do

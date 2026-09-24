@@ -29,6 +29,8 @@ defmodule KuboErpWeb.Router do
 
     get("/sales/stats", SaleController, :stats)
     post("/sales/:id/void", SaleController, :void)
+    post("/sales/:id/invoice", InvoiceController, :issue)
+    get("/sales/:id/invoice", InvoiceController, :show)
     resources("/sales", SaleController, only: [:index, :show, :create])
 
     # Compras y proveedores (P-15): cierran el ciclo del inventario.
