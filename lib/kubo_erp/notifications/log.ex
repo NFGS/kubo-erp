@@ -1,30 +1,21 @@
 defmodule KuboErp.Notifications.Log do
   @moduledoc """
-  Adaptador de notificaciones por defecto: deja el aviso en el buzon del negocio.
+  Adaptador por defecto: el aviso queda en el buzon del negocio y en el log.
 
-  No entrega nada fuera del sistema; sirve para desarrollo, para la
-  demostracion y como registro de lo que un proveedor real habria enviado.
+  No entrega nada fuera del sistema; sirve para desarrollo, para la demostracion
+  y como registro de lo que un proveedor real habria enviado.
   """
 
   @behaviour KuboErp.Notifications
 
   require Logger
 
-  alias KuboErp.Repo
   alias KuboErp.Notifications.Notification
 
   @impl true
-  def deliver(attrs) do
-    Logger.info("Notificacion para el negocio #{attrs.tenant_id}: #{attrs.subject}")
+  def deliver(%Notification{} = notification) do
+    Logger.info("Notificacion para el negocio #{notification.tenant_id}: #{notification.subject}")
 
-    %Notification{}
-    |> Notification.changeset(
-      Map.merge(attrs, %{
-        channel: "LOG",
-        status: "SENT",
-        sent_at: DateTime.utc_now() |> DateTime.truncate(:second)
-      })
-    )
-    |> Repo.insert()
+    :ok
   end
 end

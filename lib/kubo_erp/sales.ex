@@ -13,7 +13,7 @@ defmodule KuboErp.Sales do
   import Ecto.Query
 
   alias Ecto.Changeset
-  alias KuboErp.{Cash, Catalog, Notifications, Pagination, Repo}
+  alias KuboErp.{Cash, Catalog, Notifications, Pagination, Repo, Warehouses}
   alias KuboErp.Catalog.Product
   alias KuboErp.Sales.{Sale, SaleItem}
   alias KuboErp.Events.{Outbox, Publisher, SaleCreated}
@@ -266,6 +266,9 @@ defmodule KuboErp.Sales do
   defp insert_sale(tenant_id, user_id, attrs, items) do
     products = lock_products(tenant_id, Enum.map(items, & &1.product_id))
 
+    # Bodega que despacha la venta (P-22): la elegida en el POS o la por defecto.
+    warehouse_id = resolver_bodega(tenant_id, attrs["warehouse_id"])
+
     prepared =
       Enum.map(items, fn item ->
         case Map.get(products, item.product_id) do
@@ -306,7 +309,7 @@ defmodule KuboErp.Sales do
 
     sale_items =
       Enum.map(prepared, fn {product, item, tax_rate, amounts} ->
-        insert_item_and_move_stock(sale, product, item, tax_rate, amounts, user_id)
+        insert_item_and_move_stock(sale, product, item, tax_rate, amounts, user_id, warehouse_id)
       end)
 
     # El evento entra en la MISMA transaccion de la venta (outbox). Si algo
@@ -327,7 +330,17 @@ defmodule KuboErp.Sales do
     end
   end
 
-  defp insert_item_and_move_stock(sale, product, item, tax_rate, amounts, user_id) do
+  # La bodega pedida debe ser del negocio; si no llega, se usa la por defecto.
+  defp resolver_bodega(tenant_id, nil), do: Warehouses.default(tenant_id).id
+
+  defp resolver_bodega(tenant_id, warehouse_id) do
+    case Warehouses.get(tenant_id, warehouse_id) do
+      nil -> Repo.rollback(:warehouse_not_found)
+      warehouse -> warehouse.id
+    end
+  end
+
+  defp insert_item_and_move_stock(sale, product, item, tax_rate, amounts, user_id, warehouse_id) do
     sale_item =
       case %SaleItem{}
            |> SaleItem.changeset(%{
@@ -353,7 +366,8 @@ defmodule KuboErp.Sales do
              reason: "Venta #{sale.number}",
              reference_type: "SALE",
              reference_id: sale.id,
-             created_by: user_id
+             created_by: user_id,
+             warehouse_id: warehouse_id
            ) do
         {:ok, actualizado, _movement} ->
           avisar_stock_bajo(product, actualizado)

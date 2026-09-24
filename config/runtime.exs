@@ -45,6 +45,11 @@ if otlp_endpoint = System.get_env("OTEL_EXPORTER_OTLP_ENDPOINT") do
     otlp_endpoint: otlp_endpoint
 end
 
+# Documentos (P-25, ADR-0018): raiz del almacenamiento en disco. Se lee en todos
+# los entornos —las pruebas usan una carpeta temporal— y en produccion debe ser
+# un volumen: entra en el respaldo junto con la base.
+config :kubo_erp, :documents_path, System.get_env("KUBO_DOCUMENTS_PATH", "priv/documents")
+
 if config_env() == :prod do
   database_url =
     System.get_env("DATABASE_URL") ||
@@ -89,6 +94,33 @@ if config_env() == :prod do
       ip: {0, 0, 0, 0, 0, 0, 0, 0}
     ],
     secret_key_base: secret_key_base
+
+  # Notificaciones (P-19, ADR-0017): canal y correo real. La misma familia de
+  # variables que usa IAM (KUBO_SMTP_*), de modo que un despliegue configura el
+  # correo una sola vez para todo el sistema. El valor se calcula antes de
+  # `config` para no dejar un `case` como argumento de la macro.
+  notifications_adapter =
+    case System.get_env("KUBO_NOTIFICATIONS_ADAPTER") do
+      "smtp" -> KuboErp.Notifications.Smtp
+      _ -> KuboErp.Notifications.Log
+    end
+
+  config :kubo_erp, KuboErp.Mailer,
+    adapter: Swoosh.Adapters.SMTP,
+    relay: System.get_env("KUBO_SMTP_HOST"),
+    port: String.to_integer(System.get_env("KUBO_SMTP_PORT", "587")),
+    username: System.get_env("KUBO_SMTP_USERNAME"),
+    password: System.get_env("KUBO_SMTP_PASSWORD"),
+    tls: :if_available,
+    auth: :always,
+    no_mx_lookups: true
+
+  config :kubo_erp, :smtp,
+    host: System.get_env("KUBO_SMTP_HOST"),
+    from: System.get_env("KUBO_SMTP_FROM", "no-responder@kubo.local"),
+    recipient: System.get_env("KUBO_NOTIFICATIONS_EMAIL")
+
+  config :kubo_erp, :notifications_adapter, notifications_adapter
 
   # ## SSL Support
   #

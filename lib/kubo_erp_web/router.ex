@@ -43,6 +43,9 @@ defmodule KuboErpWeb.Router do
     # Buzon de notificaciones (P-19).
     get("/notifications", NotificationController, :index)
 
+    # Documentos del negocio (P-25).
+    resources("/documents", DocumentController, only: [:index, :show])
+
     get("/purchases/stats", PurchaseController, :stats)
     post("/purchases/:id/void", PurchaseController, :void)
     resources("/purchases", PurchaseController, only: [:index, :show, :create])

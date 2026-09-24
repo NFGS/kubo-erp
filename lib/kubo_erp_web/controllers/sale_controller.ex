@@ -59,6 +59,14 @@ defmodule KuboErpWeb.SaleController do
           "Stock insuficiente de #{product.name}: disponible #{product.stock}"
         )
 
+      {:error, :warehouse_not_found} ->
+        error(
+          conn,
+          :not_found,
+          "WAREHOUSE_NOT_FOUND",
+          "La bodega indicada no existe"
+        )
+
       {:error, :customer_name_required} ->
         error(
           conn,

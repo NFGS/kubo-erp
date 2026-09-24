@@ -9,7 +9,7 @@ defmodule KuboErp.Invoices do
 
   import Ecto.Query
 
-  alias KuboErp.{Billing, Repo, Sales}
+  alias KuboErp.{Billing, Documents, Repo, Sales}
   alias KuboErp.Billing.Invoice
   alias KuboErp.Sales.Sale
 
@@ -24,18 +24,38 @@ defmodule KuboErp.Invoices do
         # credito, no un documento que ya no corresponde.
         with %Sale{status: "COMPLETED"} = sale <- Sales.get_sale(tenant_id, sale_id),
              {:ok, emitida} <- Billing.issue(tenant, sale) do
-          %Invoice{}
-          |> Invoice.changeset(%{
-            tenant_id: tenant_id,
-            sale_id: sale.id,
-            number: emitida.number,
-            cufe: emitida.cufe,
-            qr_url: emitida.qr_url,
-            provider: provider(),
-            xml: emitida.xml,
-            issued_at: DateTime.utc_now() |> DateTime.truncate(:second)
-          })
-          |> Repo.insert()
+          # La factura y su XML se guardan juntos: una factura sin su documento
+          # seria una inconsistencia que despues nadie puede reconstruir.
+          Repo.scoped_transaction(fn ->
+            factura =
+              case %Invoice{}
+                   |> Invoice.changeset(%{
+                     tenant_id: tenant_id,
+                     sale_id: sale.id,
+                     number: emitida.number,
+                     cufe: emitida.cufe,
+                     qr_url: emitida.qr_url,
+                     provider: provider(),
+                     xml: emitida.xml,
+                     issued_at: DateTime.utc_now() |> DateTime.truncate(:second)
+                   })
+                   |> Repo.insert() do
+                {:ok, factura} -> factura
+                {:error, changeset} -> Repo.rollback(changeset)
+              end
+
+            case Documents.store(tenant_id, %{
+                   kind: "INVOICE_XML",
+                   filename: "#{factura.number}.xml",
+                   content_type: "application/xml",
+                   content: emitida.xml,
+                   reference_type: "INVOICE",
+                   reference_id: factura.id
+                 }) do
+              {:ok, _documento} -> factura
+              {:error, razon} -> Repo.rollback(razon)
+            end
+          end)
         else
           nil -> {:error, :sale_not_found}
           %Sale{} -> {:error, :sale_voided}

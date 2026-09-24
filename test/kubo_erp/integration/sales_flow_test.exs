@@ -13,7 +13,8 @@ defmodule KuboErp.Integration.SalesFlowTest do
 
   use KuboErp.DataCase, async: false
 
-  alias KuboErp.{Catalog, Invoices, Repo, Sales, Transfers, Warehouses}
+  alias KuboErp.{Catalog, Invoices, Notifications, Repo, Sales, Transfers, Warehouses}
+  alias KuboErp.Notifications.Notification
 
   setup do
     tenant = Ecto.UUID.generate()
@@ -45,6 +46,60 @@ defmodule KuboErp.Integration.SalesFlowTest do
     assert contar("sales", tenant) == 1
     assert contar_eventos(venta.id) == 1
     assert contar("stock_movements", tenant) == 2
+  end
+
+  test "el aviso se encola y el entregador lo marca enviado (P-19)", %{tenant: tenant} do
+    {:ok, aviso} =
+      como_tenant(tenant, fn ->
+        Notifications.notify(tenant, "LOW_STOCK", "Stock bajo de prueba", "Quedan 2 unidades")
+      end)
+
+    assert aviso.status == "PENDING", "el aviso nace encolado: la venta no espera al canal"
+
+    resumen = como_sistema(fn -> Notifications.deliver_pending(5) end)
+    assert resumen.sent >= 1
+
+    recargado = como_tenant(tenant, fn -> Repo.get!(Notification, aviso.id) end)
+    assert recargado.status == "SENT"
+    assert recargado.sent_at
+  end
+
+  test "la venta descuenta de la bodega elegida (P-22)", %{tenant: tenant, producto: producto} do
+    destino = como_tenant(tenant, fn -> Warehouses.default(tenant) end)
+    {:ok, norte} = como_tenant(tenant, fn -> Warehouses.create(tenant, %{"name" => "Bodega norte"}) end)
+
+    # La mercancia se mueve a la bodega norte y alli se vende.
+    {:ok, _transferencia} =
+      como_tenant(tenant, fn ->
+        Transfers.create(tenant, Ecto.UUID.generate(), %{
+          "from_warehouse_id" => destino.id,
+          "to_warehouse_id" => norte.id,
+          "items" => [%{"product_id" => producto.id, "quantity" => 6}]
+        })
+      end)
+
+    {:ok, _venta} =
+      como_tenant(tenant, fn ->
+        Sales.create_sale(tenant, Ecto.UUID.generate(), %{
+          "items" => [%{"product_id" => producto.id, "quantity" => 2}],
+          "payment_method" => "CASH",
+          "warehouse_id" => norte.id
+        })
+      end)
+
+    assert nivel(tenant, norte.id, producto) == 4
+    assert nivel(tenant, destino.id, producto) == 4
+    assert stock(tenant, producto) == 8
+
+    # Una bodega que no es del negocio no despacha la venta.
+    assert {:error, :warehouse_not_found} =
+             como_tenant(tenant, fn ->
+               Sales.create_sale(tenant, Ecto.UUID.generate(), %{
+                 "items" => [%{"product_id" => producto.id, "quantity" => 1}],
+                 "payment_method" => "CASH",
+                 "warehouse_id" => Ecto.UUID.generate()
+               })
+             end)
   end
 
   test "la transferencia mueve las dos bodegas y el total no cambia (P-22)", %{
@@ -103,6 +158,19 @@ defmodule KuboErp.Integration.SalesFlowTest do
     {:ok, factura} = como_tenant(tenant, fn -> Invoices.issue(tenant, venta.id, negocio) end)
     assert String.match?(factura.cufe, ~r/^[0-9a-f]{96}$/)
     assert factura.xml =~ "<cbc:UBLVersionID>UBL 2.1</cbc:UBLVersionID>"
+
+    # La factura deja su XML como documento, con el hash de su contenido.
+    documento =
+      como_tenant(tenant, fn ->
+        KuboErp.Documents.list(tenant, 1) |> List.first()
+      end)
+
+    assert documento.kind == "INVOICE_XML"
+    assert documento.content_type == "application/xml"
+    assert documento.reference_id == factura.id
+
+    {:ok, contenido} = como_tenant(tenant, fn -> KuboErp.Documents.content(documento) end)
+    assert :crypto.hash(:sha256, contenido) |> Base.encode16(case: :lower) == documento.sha256
 
     {:ok, repetida} = como_tenant(tenant, fn -> Invoices.issue(tenant, venta.id, negocio) end)
     assert repetida.id == factura.id, "emitir dos veces devuelve la misma factura"
@@ -243,6 +311,19 @@ defmodule KuboErp.Integration.SalesFlowTest do
     case resultado do
       {:ok, venta} -> venta
       {:error, razon} -> {:error, razon}
+    end
+  end
+
+  # El entregador es un proceso de sistema: barre pendientes de todos los
+  # negocios con la marca `app.system` (ADR-0017).
+  defp como_sistema(fun) do
+    Repo.query!("select set_config('app.system', 'on', false)")
+
+    try do
+      {:ok, resultado} = Repo.transaction(fn -> fun.() end)
+      resultado
+    after
+      Repo.query!("select set_config('app.system', 'off', false)")
     end
   end
 

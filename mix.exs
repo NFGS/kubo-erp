@@ -48,6 +48,11 @@ defmodule KuboErp.MixProject do
       {:jason, "~> 1.2"},
       {:amqp, "~> 4.2"},
       {:bandit, "~> 1.5"},
+      # Correo real de las notificaciones (P-19): Swoosh + gen_smtp.
+      {:swoosh, "~> 1.16"},
+      {:gen_smtp, "~> 1.2"},
+      # Cliente HTTP que Swoosh arranca aunque el envio sea por SMTP.
+      {:hackney, "~> 1.20"},
       # Base de datos de zonas horarias: sin ella `DateTime.now("America/Bogota")`
       # devuelve error y el dia comercial caeria a UTC (bug A-01).
       {:tzdata, "~> 1.1"},

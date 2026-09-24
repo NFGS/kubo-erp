@@ -14,10 +14,12 @@ defmodule KuboErp.Notifications.Notification do
     field(:recipient, :string)
     field(:subject, :string)
     field(:body, :string)
-    field(:status, :string, default: "SENT")
+    field(:status, :string, default: "PENDING")
     field(:reference_type, :string)
     field(:reference_id, :binary_id)
     field(:sent_at, :utc_datetime)
+    field(:attempts, :integer, default: 0)
+    field(:last_error, :string)
 
     timestamps(type: :utc_datetime)
   end
@@ -34,9 +36,12 @@ defmodule KuboErp.Notifications.Notification do
       :status,
       :reference_type,
       :reference_id,
-      :sent_at
+      :sent_at,
+      :attempts,
+      :last_error
     ])
     |> validate_required([:tenant_id, :kind, :subject, :body])
     |> validate_length(:subject, max: 200)
+    |> validate_inclusion(:status, ~w[PENDING SENT FAILED])
   end
 end

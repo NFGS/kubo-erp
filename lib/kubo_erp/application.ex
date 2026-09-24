@@ -22,6 +22,7 @@ defmodule KuboErp.Application do
       KuboErp.Repo,
       {Phoenix.PubSub, name: KuboErp.PubSub},
       KuboErp.Events.Publisher,
+      KuboErp.Notifications.Deliverer,
       KuboErpWeb.Endpoint
     ]
 
