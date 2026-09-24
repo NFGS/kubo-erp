@@ -102,6 +102,7 @@ if config_env() == :prod do
   notifications_adapter =
     case System.get_env("KUBO_NOTIFICATIONS_ADAPTER") do
       "smtp" -> KuboErp.Notifications.Smtp
+      "whatsapp" -> KuboErp.Notifications.Whatsapp
       _ -> KuboErp.Notifications.Log
     end
 

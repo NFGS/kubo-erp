@@ -16,7 +16,7 @@ defmodule KuboErp.Purchases do
   import Ecto.Query
 
   alias Ecto.Changeset
-  alias KuboErp.{Catalog, Pagination, Repo, Sales}
+  alias KuboErp.{Catalog, Notifications, Pagination, Repo, Sales}
   alias KuboErp.Catalog.Product
   alias KuboErp.Purchasing.{Purchase, PurchaseItem, Supplier}
   alias KuboErp.Events.{Outbox, Publisher, PurchaseReceived}
@@ -184,6 +184,16 @@ defmodule KuboErp.Purchases do
       end)
 
     Outbox.enqueue(PurchaseReceived.build(purchase, purchase_items))
+
+    # El dueño se entera de la mercancia que entro (P-19).
+    Notifications.notify(
+      purchase.tenant_id,
+      "PURCHASE",
+      "Compra #{purchase.number} recibida",
+      "Entraron #{length(purchase_items)} producto(s) por #{purchase.total}.",
+      reference_type: "PURCHASE",
+      reference_id: purchase.id
+    )
 
     {purchase, purchase_items}
   end
