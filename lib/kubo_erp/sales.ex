@@ -357,15 +357,13 @@ defmodule KuboErp.Sales do
     |> Map.new(&{&1.id, &1})
   end
 
-  @doc """
-  Siguiente numero de venta del negocio.
-
-  Se toma de `tenant_counters` con un UPSERT atomico: el contador se incrementa
-  y devuelve en una sola sentencia, sin leer el maximo ni reintentar. La fila
-  queda bloqueada hasta el final de la transaccion, de modo que dos cajas nunca
-  obtienen el mismo numero. El indice unico `(tenant_id, number)` sigue ahi como
-  red de seguridad.
-  """
+  # Siguiente numero de venta del negocio.
+  #
+  # Se toma de `tenant_counters` con un UPSERT atomico: el contador se incrementa
+  # y devuelve en una sola sentencia, sin leer el maximo ni reintentar. La fila
+  # queda bloqueada hasta el final de la transaccion, de modo que dos cajas nunca
+  # obtienen el mismo numero. El indice unico `(tenant_id, number)` sigue ahi como
+  # red de seguridad.
   defp next_number(tenant_id) do
     %{rows: [[sequence]]} =
       Repo.query!(

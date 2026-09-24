@@ -5,11 +5,16 @@ import Config
 # The MIX_TEST_PARTITION environment variable can be used
 # to provide built-in test partitioning in CI environment.
 # Run `mix help test` for more information.
+# Las pruebas de integracion (P-08) corren contra el PostgreSQL real: en local,
+# el del compose; en CI, el servicio de la pipeline. Todo se toma del entorno
+# para no cablear credenciales ni hosts.
 config :kubo_erp, KuboErp.Repo,
-  username: "postgres",
-  password: "postgres",
-  hostname: "localhost",
-  database: "kubo_erp_test#{System.get_env("MIX_TEST_PARTITION")}",
+  username: System.get_env("TEST_DB_USER", "postgres"),
+  password: System.get_env("TEST_DB_PASSWORD", "postgres"),
+  hostname: System.get_env("TEST_DB_HOST", "localhost"),
+  port: String.to_integer(System.get_env("TEST_DB_PORT", "5432")),
+  database:
+    System.get_env("TEST_DB_NAME", "kubo_erp_test#{System.get_env("MIX_TEST_PARTITION")}"),
   pool: Ecto.Adapters.SQL.Sandbox,
   pool_size: System.schedulers_online() * 2
 

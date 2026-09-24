@@ -268,12 +268,10 @@ defmodule KuboErp.Purchases do
     |> Map.new(&{&1.id, &1})
   end
 
-  @doc """
-  Siguiente numero de compra del negocio.
-
-  Usa el contador atomico `tenant_counters.purchase_seq` (misma leccion que la
-  numeracion de ventas): un UPSERT devuelve el consecutivo sin conflictos.
-  """
+  # Siguiente numero de compra del negocio.
+  #
+  # Usa el contador atomico `tenant_counters.purchase_seq` (misma leccion que la
+  # numeracion de ventas): un UPSERT devuelve el consecutivo sin conflictos.
   defp next_number(tenant_id) do
     %{rows: [[sequence]]} =
       Repo.query!(
