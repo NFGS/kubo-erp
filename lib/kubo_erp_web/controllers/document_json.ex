@@ -3,6 +3,8 @@ defmodule KuboErpWeb.DocumentJSON do
 
   def index(%{documents: documents}), do: %{data: Enum.map(documents, &data/1)}
 
+  def show(%{document: document}), do: %{data: data(document)}
+
   defp data(document) do
     %{
       id: document.id,
