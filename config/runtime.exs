@@ -20,8 +20,39 @@ if System.get_env("PHX_SERVER") do
   config :kubo_erp, KuboErpWeb.Endpoint, server: true
 end
 
-config :kubo_erp, KuboErpWeb.Endpoint,
-  http: [port: String.to_integer(System.get_env("PORT", "4000"))]
+# Transporte del endpoint (P-28, ADR-0020): con KUBO_INTERNAL_TLS=true sirve
+# HTTPS y EXIGE el certificado del cliente; sin la bandera, HTTP normal
+# (desarrollo y pruebas). Se decide UNA vez: dos listeners en el mismo puerto
+# chocan con :eaddrinuse.
+transporte =
+  if System.get_env("KUBO_INTERNAL_TLS") == "true" do
+    [
+      https: [
+        port: String.to_integer(System.get_env("PORT", "4000")),
+        cipher_suite: :strong,
+        # Bandit delega el TLS en Thousand Island: las opciones de transporte
+        # (certificado, CA y exigencia del cliente) van anidadas ahi.
+        thousand_island_options: [
+          transport_options: [
+            certfile: System.get_env("KUBO_TLS_CERT"),
+            keyfile: System.get_env("KUBO_TLS_KEY"),
+            cacertfile: System.get_env("KUBO_TLS_CA"),
+            verify: :verify_peer,
+            fail_if_no_peer_cert: true
+          ]
+        ]
+      ]
+    ]
+  else
+    [
+      http: [
+        ip: {0, 0, 0, 0, 0, 0, 0, 0},
+        port: String.to_integer(System.get_env("PORT", "4000"))
+      ]
+    ]
+  end
+
+config :kubo_erp, KuboErpWeb.Endpoint, transporte
 
 # Bus de eventos. Si la variable esta vacia, el servicio opera sin publicar
 # eventos (degradacion elegante: la venta nunca falla por la mensajeria).
@@ -49,6 +80,19 @@ end
 # los entornos —las pruebas usan una carpeta temporal— y en produccion debe ser
 # un volumen: entra en el respaldo junto con la base.
 config :kubo_erp, :documents_path, System.get_env("KUBO_DOCUMENTS_PATH", "priv/documents")
+
+# Almacenamiento de documentos (ADR-0018): disco por defecto; un bucket de
+# objetos se enchufa con KUBO_DOCUMENTS_STORAGE=cloudinary + KUBO_CLOUDINARY_URL.
+# El valor se calcula antes de `config` para no dejar un `case` como argumento
+# de la macro (el parser lo confunde con el bloque `do` de la llamada).
+documents_storage =
+  case System.get_env("KUBO_DOCUMENTS_STORAGE") do
+    "cloudinary" -> KuboErp.Documents.Storage.Cloudinary
+    _ -> KuboErp.Documents.Storage.Local
+  end
+
+config :kubo_erp, :documents_storage, documents_storage
+config :kubo_erp, :cloudinary_url, System.get_env("KUBO_CLOUDINARY_URL")
 
 if config_env() == :prod do
   database_url =
@@ -86,13 +130,6 @@ if config_env() == :prod do
 
   config :kubo_erp, KuboErpWeb.Endpoint,
     url: [host: host, port: 443, scheme: "https"],
-    http: [
-      # Enable IPv6 and bind on all interfaces.
-      # Set it to  {0, 0, 0, 0, 0, 0, 0, 1} for local network only access.
-      # See the documentation on https://bandit.hexdocs.pm/Bandit.html#t:options/0
-      # for details about using IPv6 vs IPv4 and loopback vs public addresses.
-      ip: {0, 0, 0, 0, 0, 0, 0, 0}
-    ],
     secret_key_base: secret_key_base
 
   # Notificaciones (P-19, ADR-0017): canal y correo real. La misma familia de
