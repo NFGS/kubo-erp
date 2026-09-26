@@ -47,6 +47,7 @@ defmodule KuboErpWeb.Plugs.Identity do
         |> assign(:tenant_timezone, timezone)
         |> assign(:tenant_vertical, header(conn, "x-tenant-vertical"))
         |> assign(:tenant_name, header(conn, "x-tenant-name"))
+        |> assign(:tenant_plan, header(conn, "x-tenant-plan"))
     end
   end
 

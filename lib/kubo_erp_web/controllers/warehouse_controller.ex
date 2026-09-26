@@ -3,7 +3,7 @@ defmodule KuboErpWeb.WarehouseController do
 
   use KuboErpWeb, :controller
 
-  alias KuboErp.Warehouses
+  alias KuboErp.{Plans, Warehouses}
 
   def index(conn, _params) do
     render(conn, :index, warehouses: Warehouses.list(conn.assigns.tenant_id))
@@ -17,6 +17,24 @@ defmodule KuboErpWeb.WarehouseController do
   end
 
   def create(conn, params) do
+    # Cupo del plan (ADR-0021): se avisa con el limite y el uso, sin tocar los
+    # datos que el negocio ya tiene.
+    plan = Plans.get(conn.assigns[:tenant_plan])
+    actuales = length(Warehouses.list(conn.assigns.tenant_id))
+
+    if actuales >= plan.max_warehouses do
+      error(
+        conn,
+        :conflict,
+        "PLAN_LIMIT_REACHED",
+        "El plan #{plan.code} permite #{plan.max_warehouses} bodegas y el negocio ya tiene #{actuales}"
+      )
+    else
+      crear(conn, params)
+    end
+  end
+
+  defp crear(conn, params) do
     case Warehouses.create(conn.assigns.tenant_id, params) do
       {:ok, warehouse} ->
         conn |> put_status(:created) |> render(:show, warehouse: warehouse)
