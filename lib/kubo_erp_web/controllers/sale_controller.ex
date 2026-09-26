@@ -29,7 +29,13 @@ defmodule KuboErpWeb.SaleController do
   end
 
   def create(conn, params) do
-    attrs = params["sale"] || params
+    # El nombre y la zona del negocio viajan en la peticion (los propaga el
+    # gateway): el comprobante en PDF los necesita sin consultar a IAM.
+    attrs =
+      Map.merge(params["sale"] || params, %{
+        "tenant_name" => conn.assigns[:tenant_name],
+        "tenant_timezone" => conn.assigns[:tenant_timezone]
+      })
 
     case Sales.create_sale(conn.assigns.tenant_id, conn.assigns.user_id, attrs) do
       {:ok, sale} ->

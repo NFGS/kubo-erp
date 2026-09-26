@@ -13,7 +13,7 @@ defmodule KuboErp.Sales do
   import Ecto.Query
 
   alias Ecto.Changeset
-  alias KuboErp.{Cash, Catalog, Notifications, Pagination, Repo, Warehouses}
+  alias KuboErp.{Cash, Catalog, Documents, Notifications, Pagination, Repo, Warehouses}
   alias KuboErp.Catalog.Product
   alias KuboErp.Sales.{Sale, SaleItem}
   alias KuboErp.Events.{Outbox, Publisher, SaleCreated}
@@ -312,11 +312,36 @@ defmodule KuboErp.Sales do
         insert_item_and_move_stock(sale, product, item, tax_rate, amounts, user_id, warehouse_id)
       end)
 
+    # El comprobante queda como documento (P-25): antes se imprimia desde el
+    # navegador y se perdia; ahora se puede reimprimir o enviar.
+    guardar_comprobante(sale, sale_items, attrs, user_id)
+
     # El evento entra en la MISMA transaccion de la venta (outbox). Si algo
     # revierte, el evento desaparece con ella; si confirma, ya no se pierde.
     Outbox.enqueue(SaleCreated.build(sale, sale_items))
 
     {sale, sale_items}
+  end
+
+  defp guardar_comprobante(sale, sale_items, attrs, user_id) do
+    {:ok, contenido} =
+      Documents.ReceiptPdf.render(%{sale | items: sale_items},
+        tenant_name: attrs["tenant_name"],
+        timezone: attrs["tenant_timezone"] || business_timezone()
+      )
+
+    case Documents.store(sale.tenant_id, %{
+           kind: "RECEIPT_PDF",
+           filename: "comprobante-#{sale.number}.pdf",
+           content_type: "application/pdf",
+           content: contenido,
+           reference_type: "SALE",
+           reference_id: sale.id,
+           created_by: user_id
+         }) do
+      {:ok, _documento} -> :ok
+      {:error, razon} -> Repo.rollback(razon)
+    end
   end
 
   defp insert_sale_record(attrs) do
