@@ -82,7 +82,8 @@ defmodule KuboErp.Invoices do
     end
   end
 
-  defp provider do
+  @doc "Proveedor tecnologico configurado (el adaptador de facturacion)."
+  def provider do
     Billing.adapter() |> Module.split() |> List.last() |> Macro.underscore()
   end
 end

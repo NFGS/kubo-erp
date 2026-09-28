@@ -19,6 +19,10 @@ defmodule KuboErp.Billing do
               {:ok, %{number: String.t(), cufe: String.t(), qr_url: String.t(), xml: String.t()}}
               | {:error, term()}
 
+  @callback issue_credit_note(tenant :: map(), sale :: Sale.t(), invoice :: map(), reason :: String.t()) ::
+              {:ok, %{number: String.t(), cude: String.t(), qr_url: String.t(), xml: String.t()}}
+              | {:error, term()}
+
   @doc "Adaptador configurado (`KUBO_BILLING_ADAPTER`, por defecto el sandbox)."
   def adapter do
     case Application.get_env(:kubo_erp, :billing_adapter, KuboErp.Billing.Sandbox) do
@@ -28,4 +32,14 @@ defmodule KuboErp.Billing do
 
   @doc "Emite la factura de la venta con el adaptador configurado."
   def issue(tenant, %Sale{} = sale), do: adapter().issue(tenant, sale)
+
+  @doc """
+  Emite la nota credito que corrige una factura (anulacion de la venta).
+
+  Una factura no se edita ni se borra: se corrige con un documento nuevo que la
+  referencia, y ese documento tambien tiene su representacion emitida (CUDE).
+  """
+  def issue_credit_note(tenant, %Sale{} = sale, invoice, reason) do
+    adapter().issue_credit_note(tenant, sale, invoice, reason)
+  end
 end

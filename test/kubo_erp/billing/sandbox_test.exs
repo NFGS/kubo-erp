@@ -67,6 +67,29 @@ defmodule KuboErp.Billing.SandboxTest do
     assert xml =~ "Cafe molido"
   end
 
+  test "la nota credito referencia la factura, con CUDE propio y tipo 91", %{
+    venta: venta,
+    tenant: tenant
+  } do
+    {:ok, factura} = Sandbox.issue(tenant, venta)
+    {:ok, nota} = Sandbox.issue_credit_note(tenant, venta, factura, "Anulacion de la venta V-000042")
+
+    assert String.match?(nota.cude, ~r/^[0-9a-f]{96}$/)
+    assert nota.cude != factura.cufe
+    assert nota.number == "NC-000042"
+    assert nota.qr_url =~ nota.cude
+
+    assert nota.xml =~ "<CreditNote"
+    assert nota.xml =~ "<cbc:CreditNoteTypeCode>91</cbc:CreditNoteTypeCode>"
+    assert nota.xml =~ "<cbc:ID>NC-000042</cbc:ID>"
+    assert nota.xml =~ "<cbc:UUID schemeName=\"CUDE-SHA384\">#{nota.cude}</cbc:UUID>"
+    # Referencia a la factura que corrige: sin ella la nota no corrige nada.
+    assert nota.xml =~ "<cbc:ReferenceID>FE-000042</cbc:ReferenceID>"
+    assert nota.xml =~ "<cbc:UUID schemeName=\"CUFE-SHA384\">#{factura.cufe}</cbc:UUID>"
+    assert nota.xml =~ "Anulacion de la venta V-000042"
+    assert nota.xml =~ "Cafe molido"
+  end
+
   test "sin NIT registrado se usa el marcador documentado", %{venta: venta} do
     {:ok, factura} = Sandbox.issue(%{id: "negocio-1", name: "Tienda"}, venta)
 

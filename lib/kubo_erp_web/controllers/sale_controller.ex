@@ -3,7 +3,7 @@ defmodule KuboErpWeb.SaleController do
 
   use KuboErpWeb, :controller
 
-  alias KuboErp.{Pagination, Sales}
+  alias KuboErp.{CreditNotes, Pagination, Sales}
 
   def index(conn, params) do
     {limit, offset} = Pagination.normalize(params)
@@ -97,6 +97,12 @@ defmodule KuboErpWeb.SaleController do
   def void(conn, %{"id" => id}) do
     case Sales.void_sale(conn.assigns.tenant_id, conn.assigns.user_id, id) do
       {:ok, sale} ->
+        # Si la venta estaba facturada, anularla emite su nota credito (la
+        # factura es inmutable): el documento nuevo la referencia. Sin factura
+        # no hay nada que corregir, y un fallo aqui no revierte la anulacion
+        # —el documento se puede reintentar—, pero se registra.
+        emitir_nota_credito(conn, sale)
+
         render(conn, :show, sale: sale)
 
       {:error, :not_found} ->
@@ -107,6 +113,27 @@ defmodule KuboErpWeb.SaleController do
 
       {:error, reason} ->
         error(conn, :unprocessable_entity, "VOID_FAILED", inspect(reason))
+    end
+  end
+
+  defp emitir_nota_credito(conn, sale) do
+    tenant = %{id: conn.assigns.tenant_id, name: conn.assigns[:tenant_name]}
+
+    case CreditNotes.issue(conn.assigns.tenant_id, sale.id, tenant, nil) do
+      {:ok, _nota} ->
+        :ok
+
+      {:error, :invoice_not_found} ->
+        :ok
+
+      {:error, razon} ->
+        require Logger
+
+        Logger.warning(
+          "La venta #{sale.number} quedo anulada sin nota credito: #{inspect(razon)}"
+        )
+
+        :ok
     end
   end
 

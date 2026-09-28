@@ -13,7 +13,7 @@ defmodule KuboErp.Integration.SalesFlowTest do
 
   use KuboErp.DataCase, async: false
 
-  alias KuboErp.{Catalog, Invoices, Notifications, Repo, Sales, Transfers, Warehouses}
+  alias KuboErp.{Catalog, CreditNotes, Invoices, Notifications, Repo, Sales, Transfers, Warehouses}
   alias KuboErp.Notifications.Notification
 
   setup do
@@ -191,6 +191,58 @@ defmodule KuboErp.Integration.SalesFlowTest do
     assert {:error, :sale_voided} =
              como_tenant(tenant, fn ->
                Invoices.issue(tenant, venta.id, %{id: tenant, name: "Tienda"})
+             end)
+  end
+
+  test "anular una venta facturada emite su nota credito, una sola vez (P-18)", %{
+    tenant: tenant,
+    producto: producto
+  } do
+    venta = vender(tenant, producto, 1)
+    negocio = %{id: tenant, name: "Tienda Integracion"}
+
+    {:ok, factura} = como_tenant(tenant, fn -> Invoices.issue(tenant, venta.id, negocio) end)
+
+    # Antes de anular no hay nada que corregir.
+    assert {:error, :sale_not_voided} =
+             como_tenant(tenant, fn -> CreditNotes.issue(tenant, venta.id, negocio, nil) end)
+
+    {:ok, _anulada} =
+      como_tenant(tenant, fn -> Sales.void_sale(tenant, Ecto.UUID.generate(), venta.id) end)
+
+    {:ok, nota} = como_tenant(tenant, fn -> CreditNotes.issue(tenant, venta.id, negocio, nil) end)
+    assert nota.invoice_id == factura.id
+    assert String.match?(nota.cude, ~r/^[0-9a-f]{96}$/)
+    assert nota.number == "NC-" <> String.replace_leading(venta.number, "V-", "")
+    assert nota.reason =~ "Anulacion de la venta"
+
+    # Su XML queda en el archivo de documentos, con el hash de su contenido.
+    documento =
+      como_tenant(tenant, fn ->
+        KuboErp.Documents.list(tenant, 10) |> Enum.find(&(&1.kind == "CREDIT_NOTE_XML"))
+      end)
+
+    assert documento.content_type == "application/xml"
+    assert documento.reference_id == nota.id
+
+    # Idempotente: un reintento (o un doble clic) no emite dos notas fiscales.
+    {:ok, repetida} = como_tenant(tenant, fn -> CreditNotes.issue(tenant, venta.id, negocio, nil) end)
+    assert repetida.id == nota.id
+
+    # RLS: otro negocio no ve la nota.
+    otro = Ecto.UUID.generate()
+    assert como_tenant(otro, fn -> CreditNotes.get_by_sale(otro, venta.id) end) == nil
+  end
+
+  test "sin factura no hay nota credito que emitir (P-18)", %{tenant: tenant, producto: producto} do
+    venta = vender(tenant, producto, 1)
+
+    {:ok, _anulada} =
+      como_tenant(tenant, fn -> Sales.void_sale(tenant, Ecto.UUID.generate(), venta.id) end)
+
+    assert {:error, :invoice_not_found} =
+             como_tenant(tenant, fn ->
+               CreditNotes.issue(tenant, venta.id, %{id: tenant, name: "Tienda"}, nil)
              end)
   end
 
