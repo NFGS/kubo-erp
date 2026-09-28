@@ -159,10 +159,12 @@ defmodule KuboErp.Integration.SalesFlowTest do
     assert String.match?(factura.cufe, ~r/^[0-9a-f]{96}$/)
     assert factura.xml =~ "<cbc:UBLVersionID>UBL 2.1</cbc:UBLVersionID>"
 
-    # La factura deja su XML como documento, con el hash de su contenido.
+    # La factura deja su XML como documento, con el hash de su contenido. Se
+    # filtra por tipo: la venta tambien deja su comprobante y el orden entre
+    # documentos de la misma marca de tiempo no es determinista.
     documento =
       como_tenant(tenant, fn ->
-        KuboErp.Documents.list(tenant, 1) |> List.first()
+        KuboErp.Documents.list(tenant, 10) |> Enum.find(&(&1.kind == "INVOICE_XML"))
       end)
 
     assert documento.kind == "INVOICE_XML"
