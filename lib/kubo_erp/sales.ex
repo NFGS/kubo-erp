@@ -116,6 +116,32 @@ defmodule KuboErp.Sales do
   end
 
   @doc """
+  Uso del mes en curso para el plan del negocio (F6.1).
+
+  El mes es el del **negocio**, no el de UTC: un cierre de mes a las 20:00 en
+  Bogota pertenece a ese mes.
+  """
+  def monthly_usage(tenant_id, timezone \\ nil) do
+    timezone = timezone || business_timezone()
+    mes = business_today(timezone) |> Date.to_iso8601() |> String.slice(0, 7)
+
+    Sale
+    |> where(
+      [s],
+      s.tenant_id == ^tenant_id and s.status == "COMPLETED" and
+        fragment(
+          "to_char(? AT TIME ZONE 'UTC' AT TIME ZONE ?, 'YYYY-MM') = ?",
+          s.inserted_at,
+          ^timezone,
+          ^mes
+        )
+    )
+    |> select([s], %{count: count(s.id), revenue: coalesce(sum(s.total), 0)})
+    |> Repo.one()
+    |> Map.put(:month, mes)
+  end
+
+  @doc """
   Zona horaria del negocio, configurable con `KUBO_TIMEZONE`.
 
   Las columnas de fecha se guardan en UTC (correcto para almacenar), pero el dia

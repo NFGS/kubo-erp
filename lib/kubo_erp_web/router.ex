@@ -45,6 +45,9 @@ defmodule KuboErpWeb.Router do
 
     # Documentos del negocio (P-25).
     resources("/documents", DocumentController, only: [:index, :show])
+
+    # Uso del negocio para su plan (F6.1).
+    get("/usage", UsageController, :show)
     post("/purchases/:id/documents", DocumentController, :create_for_purchase)
 
     get("/purchases/stats", PurchaseController, :stats)

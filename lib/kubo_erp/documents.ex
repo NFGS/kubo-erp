@@ -77,4 +77,12 @@ defmodule KuboErp.Documents do
   end
 
   def content(%Document{} = document), do: storage().get(document.storage_key)
+
+  @doc "Uso de almacenamiento del negocio (F6.1): cuantos documentos y cuantos bytes."
+  def usage(tenant_id) do
+    Document
+    |> where([d], d.tenant_id == ^tenant_id)
+    |> select([d], %{count: count(d.id), bytes: coalesce(sum(d.size), 0)})
+    |> Repo.one()
+  end
 end
