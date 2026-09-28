@@ -16,6 +16,15 @@ defmodule KuboErpWeb.Router do
     get("/health", HealthController, :show)
   end
 
+  # Uso agregado para el panel de plataforma (ADR-0025): sin plug de identidad,
+  # porque quien llama es el gateway dentro de la malla mTLS y el camino no esta
+  # publicado. Recibe los negocios y responde solo conteos.
+  scope "/api/v1/internal", KuboErpWeb do
+    pipe_through(:api)
+
+    get("/usage", InternalUsageController, :index)
+  end
+
   # Rutas de negocio: exigen identidad verificada por el API Gateway.
   scope "/api/v1", KuboErpWeb do
     pipe_through([:api, :authenticated])
