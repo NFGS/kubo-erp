@@ -18,6 +18,8 @@ defmodule KuboErp.Sales do
   alias KuboErp.Sales.{Sale, SaleItem}
   alias KuboErp.Events.{Outbox, Publisher, SaleCreated}
 
+  require Logger
+
   @default_tax_rate Decimal.new("19.00")
   @number_retries 3
 
@@ -276,8 +278,29 @@ defmodule KuboErp.Sales do
   # ---------------------------------------------------------------------------
 
   defp do_create_sale(tenant_id, user_id, attrs, items, attempt) do
-    case Repo.scoped_transaction(fn -> insert_sale(tenant_id, user_id, attrs, items) end) do
+    # El numero se reserva en una transaccion corta, ANTES de la venta: el
+    # UPSERT del contador bloquea su fila hasta el commit, y mantenerlo dentro
+    # de la transaccion serializaba todas las cajas del negocio (a 50 cajas el
+    # p95 se iba a ~600 ms). Un fallo posterior deja un hueco en la numeracion:
+    # no se reutiliza, que es el precio de no bloquear la caja.
+    number = next_number(tenant_id)
+
+    case Repo.scoped_transaction(fn -> insert_sale(tenant_id, user_id, attrs, items, number) end) do
       {:ok, {sale, sale_items}} ->
+        # El comprobante se genera DESPUES del commit: renderizar un PDF dentro
+        # de la transaccion alargaba el bloqueo de las filas (la caja lo notaba
+        # con 50 cajas concurrentes) y un fallo de almacenamiento revertia una
+        # venta ya cobrada. Si falla, la venta sigue en pie y queda el aviso.
+        case guardar_comprobante(sale, sale_items, attrs, user_id) do
+          :ok ->
+            :ok
+
+          {:error, razon} ->
+            Logger.warning(
+              "No fue posible guardar el comprobante de #{sale.number}: #{inspect(razon)}"
+            )
+        end
+
         Publisher.kick()
         {:ok, %{sale | items: sale_items}}
 
@@ -289,7 +312,7 @@ defmodule KuboErp.Sales do
     end
   end
 
-  defp insert_sale(tenant_id, user_id, attrs, items) do
+  defp insert_sale(tenant_id, user_id, attrs, items, number) do
     products = lock_products(tenant_id, Enum.map(items, & &1.product_id))
 
     # Bodega que despacha la venta (P-22): la elegida en el POS o la por defecto.
@@ -330,17 +353,14 @@ defmodule KuboErp.Sales do
         sold_by: user_id,
         # La venta se liga al turno de caja abierto: el arqueo suma exactamente
         # las ventas de la sesion (P-16).
-        cash_session_id: Cash.open_session_id(tenant_id)
+        cash_session_id: Cash.open_session_id(tenant_id),
+        number: number
       })
 
     sale_items =
       Enum.map(prepared, fn {product, item, tax_rate, amounts} ->
         insert_item_and_move_stock(sale, product, item, tax_rate, amounts, user_id, warehouse_id)
       end)
-
-    # El comprobante queda como documento (P-25): antes se imprimia desde el
-    # navegador y se perdia; ahora se puede reimprimir o enviar.
-    guardar_comprobante(sale, sale_items, attrs, user_id)
 
     # El evento entra en la MISMA transaccion de la venta (outbox). Si algo
     # revierte, el evento desaparece con ella; si confirma, ya no se pierde.
@@ -350,30 +370,29 @@ defmodule KuboErp.Sales do
   end
 
   defp guardar_comprobante(sale, sale_items, attrs, user_id) do
-    {:ok, contenido} =
-      Documents.ReceiptPdf.render(%{sale | items: sale_items},
-        tenant_name: attrs["tenant_name"],
-        timezone: attrs["tenant_timezone"] || business_timezone()
-      )
-
-    case Documents.store(sale.tenant_id, %{
-           kind: "RECEIPT_PDF",
-           filename: "comprobante-#{sale.number}.pdf",
-           content_type: "application/pdf",
-           content: contenido,
-           reference_type: "SALE",
-           reference_id: sale.id,
-           created_by: user_id
-         }) do
-      {:ok, _documento} -> :ok
-      {:error, razon} -> Repo.rollback(razon)
+    with {:ok, contenido} <-
+           Documents.ReceiptPdf.render(%{sale | items: sale_items},
+             tenant_name: attrs["tenant_name"],
+             timezone: attrs["tenant_timezone"] || business_timezone()
+           ),
+         {:ok, _documento} <-
+           Documents.store(sale.tenant_id, %{
+             kind: "RECEIPT_PDF",
+             filename: "comprobante-#{sale.number}.pdf",
+             content_type: "application/pdf",
+             content: contenido,
+             reference_type: "SALE",
+             reference_id: sale.id,
+             created_by: user_id
+           }) do
+      :ok
+    else
+      {:error, razon} -> {:error, razon}
     end
   end
 
   defp insert_sale_record(attrs) do
-    changeset =
-      %Sale{}
-      |> Sale.changeset(Map.put(attrs, :number, next_number(attrs.tenant_id)))
+    changeset = Sale.changeset(%Sale{}, attrs)
 
     case Repo.insert(changeset) do
       {:ok, sale} -> sale
@@ -460,10 +479,11 @@ defmodule KuboErp.Sales do
   # Siguiente numero de venta del negocio.
   #
   # Se toma de `tenant_counters` con un UPSERT atomico: el contador se incrementa
-  # y devuelve en una sola sentencia, sin leer el maximo ni reintentar. La fila
-  # queda bloqueada hasta el final de la transaccion, de modo que dos cajas nunca
-  # obtienen el mismo numero. El indice unico `(tenant_id, number)` sigue ahi como
-  # red de seguridad.
+  # y devuelve en una sola sentencia, sin leer el maximo ni reintentar. Corre en
+  # autocommit (antes de la transaccion de la venta), de modo que el bloqueo de
+  # la fila dura milisegundos y no serializa las cajas; dos cajas nunca obtienen
+  # el mismo numero y el indice unico `(tenant_id, number)` sigue como red de
+  # seguridad.
   defp next_number(tenant_id) do
     %{rows: [[sequence]]} =
       Repo.query!(

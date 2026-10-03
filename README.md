@@ -115,8 +115,10 @@ se queda sin memoria (límite de 512 MB) y la imagen de ejecución no incluye
 - **Sin llave foránea hacia el CRM**: `customer_id` es una referencia lógica y el
   nombre del cliente se copia en la venta. Los servicios no comparten base de
   datos; el histórico no depende de la disponibilidad de otro servicio.
-- **El número de venta** se calcula dentro de la transacción y el índice único
-  `(tenant_id, number)` protege la secuencia; ante una colisión se reintenta.
+- **El número de venta** se reserva en una transacción corta antes de la venta
+  (el contador bloquea su fila hasta el commit y dentro de la transacción
+  serializaba todas las cajas del negocio); el índice único `(tenant_id, number)`
+  protege la secuencia y un fallo posterior deja un hueco que no se reutiliza.
 - **Aislamiento impuesto por el motor**: RLS activo con `FORCE`; el interceptor
   reserva la conexión (`Repo.checkout`) y fija `app.tenant_id` con `set_config`
   de sesión. Las operaciones de negocio abren su transacción con
