@@ -21,7 +21,7 @@ defmodule KuboErp.Notifications.Smtp do
          destinatario when is_binary(destinatario) <- notification.recipient || config.recipient do
       notification
       |> build_email(destinatario, config.from)
-      |> Swoosh.Mailer.deliver()
+      |> KuboErp.Mailer.deliver()
       |> case do
         {:ok, _resultado} -> :ok
         {:error, razon} -> {:error, razon}
