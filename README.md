@@ -1,6 +1,7 @@
 # kubo-erp
 
-Núcleo transaccional de Kubo: catálogo, inventario (kardex) y ventas.
+Núcleo transaccional de Kubo: catálogo, inventario (kardex), ventas, compras,
+caja, bodegas, facturación y documentos.
 
 | Campo | Valor |
 | --- | --- |
@@ -41,6 +42,15 @@ venta completa en una transacción con bloqueo pesimista de las filas.
 | GET | `/api/v1/purchases/:id` | Detalle de compra |
 | POST | `/api/v1/purchases/:id/void` | Anular compra (revierte inventario) |
 | GET | `/api/v1/purchases/stats` | Totales de compras |
+| GET · POST | `/api/v1/cash-sessions` · `/current` · `/:id/close` | Sesiones de caja (apertura, turno y arqueo) |
+| GET · POST | `/api/v1/warehouses` · `/api/v1/transfers` | Bodegas, stock por bodega y transferencias |
+| GET · POST | `/api/v1/packs` · `/packs/current` · `/packs/apply` | Vertical packs y catálogo de arranque |
+| POST | `/api/v1/sales/:id/invoice` · `/invoices` · `/credit-notes` | Facturación DIAN (UBL 2.1, CUFE) y notas crédito |
+| GET | `/api/v1/documents` · `/documents/:id` | Documentos del negocio (XML, PDF, soportes) |
+| GET · PATCH | `/api/v1/notifications` | Buzón del negocio y marcado como leídas |
+| GET | `/api/v1/reports/sales.csv` · `/reports/inventory.csv` | Reportes exportables |
+| POST | `/api/v1/products/import` | Importación de catálogo por CSV |
+| GET | `/api/v1/usage` · `/internal/usage` | Uso del plan (propio y agregado del operador) |
 | GET | `/api/v1/health` | Estado del servicio, base y bus |
 
 ## Consistencia del inventario
@@ -50,7 +60,8 @@ venta completa en una transacción con bloqueo pesimista de las filas.
 2. La venta, su detalle y los movimientos de kardex se escriben **en una sola
    transacción**.
 3. `stock_movements` tiene un índice único `(reference_type, reference_id,
-   product_id)`: reintentar una venta no descuenta dos veces.
+   product_id, warehouse_id)`: reintentar una venta no descuenta dos veces y cada
+   bodega lleva su propio kardex.
 4. Restricción de base de datos `products_stock_not_negative`: el motor rechaza
    cualquier estado imposible, aunque un error de programación lo intente.
 
@@ -81,18 +92,19 @@ caja nunca depende del bus y un evento confirmado no se pierde (ADR-0009;
 
 ## Pruebas
 
-Las pruebas son puras (aritmética de dinero y outbox) y no necesitan base de
-datos. La imagen de ejecución no incluye `test/` y el contenedor de producción se
-queda sin memoria al compilar el entorno de pruebas, así que se ejecutan con 3 GB
-y el directorio montado:
+Son **50 bloques ExUnit**: 34 puros (dinero, outbox, paginación, packs, planes,
+facturación, PDF, documentos y adaptadores) y 16 de integración contra
+PostgreSQL real (RLS, numeración atómica, atomicidad de la venta y el outbox,
+kardex, transferencias y notas crédito). El script los corre completos:
 
 ```bash
-docker run --rm -m 3g -e MIX_ENV=test \
-  -v "$PWD/test:/app/test:ro" --entrypoint bash kubo-kubo-erp \
-  -c "cd /app && mix compile >/dev/null 2>&1 && ERL_LIBS=/app/_build/test/lib \
-      elixir -e 'ExUnit.start(); Code.require_file(\"test/kubo_erp/sales_totals_test.exs\"); \
-      Code.require_file(\"test/kubo_erp/outbox_test.exs\")'"
+./kubo-infra/scripts/erp-tests.sh
 ```
+
+Las pruebas puras no necesitan base de datos, pero **no pueden ejecutarse dentro
+del contenedor de producción**: al compilar el entorno de pruebas el contenedor
+se queda sin memoria (límite de 512 MB) y la imagen de ejecución no incluye
+`test/`. El script usa 3 GB y monta el árbol de trabajo (integrado en `make ci`).
 
 ## Decisiones de diseño
 
@@ -104,10 +116,13 @@ docker run --rm -m 3g -e MIX_ENV=test \
 - **El número de venta** se calcula dentro de la transacción y el índice único
   `(tenant_id, number)` protege la secuencia; ante una colisión se reintenta.
 - **Aislamiento impuesto por el motor**: RLS activo con `FORCE`; el interceptor
-  `action/2` fija `app.tenant_id` por petición y las operaciones de negocio usan
-  savepoints (`Repo.scoped_transaction/1`) para que un rollback de negocio no
-  aborte la transacción externa (ADR-0010). `outbox_events` queda fuera de RLS a
-  propósito: es la tabla operativa que el publicador lee cruzando negocios.
+  reserva la conexión (`Repo.checkout`) y fija `app.tenant_id` con `set_config`
+  de sesión. Las operaciones de negocio abren su transacción con
+  `Repo.scoped_transaction/1`, que usa savepoints cuando ya hay una transacción
+  externa (por ejemplo, bajo el sandbox de pruebas) para que un rollback de
+  negocio no aborte la operación completa (ADR-0010). `outbox_events` queda
+  fuera de RLS a propósito: es la tabla operativa que el publicador lee
+  cruzando negocios.
 
 ## Compras y proveedores (Fase 3)
 
