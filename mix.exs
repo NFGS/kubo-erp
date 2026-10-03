@@ -10,7 +10,11 @@ defmodule KuboErp.MixProject do
       start_permanent: Mix.env() == :prod,
       aliases: aliases(),
       deps: deps(),
-      listeners: [Phoenix.CodeReloader]
+      listeners: [Phoenix.CodeReloader],
+      # Cobertura: la capa web y los flujos completos los cubre el humo (184
+      # comprobaciones contra el sistema vivo); este gate es un ratchet de la
+      # suite ExUnit para que la cobertura no baje del valor actual.
+      test_coverage: [summary: [threshold: 35]]
     ]
   end
 
