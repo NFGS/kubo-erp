@@ -17,12 +17,16 @@ defmodule KuboErpWeb.Plugs.Identity do
 
   @uuid_regex ~r/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/
 
+  # Roles validos del negocio: una cabecera forjada no inventa un rol nuevo.
+  @roles ~w(OWNER ADMIN SELLER ACCOUNTANT VIEWER)
+
   def init(opts), do: opts
 
   def call(conn, _opts) do
     tenant_id = header(conn, "x-tenant-id")
     user_id = header(conn, "x-user-id")
     timezone = header(conn, "x-tenant-timezone")
+    role = header(conn, "x-user-role")
 
     cond do
       not present?(tenant_id) ->
@@ -34,6 +38,9 @@ defmodule KuboErpWeb.Plugs.Identity do
       present?(user_id) and not Regex.match?(@uuid_regex, user_id) ->
         error(conn, :bad_request, "INVALID_USER", "El usuario indicado no es valido")
 
+      present?(role) and role not in @roles ->
+        error(conn, :forbidden, "INVALID_ROLE", "El rol indicado no es valido")
+
       # Una zona desconocida haria caer el dia comercial a UTC en silencio: se
       # rechaza en la puerta (ADR-0012). Ausente es valido: aplica el respaldo.
       present?(timezone) and not timezone_valida?(timezone) ->
@@ -43,7 +50,7 @@ defmodule KuboErpWeb.Plugs.Identity do
         conn
         |> assign(:tenant_id, tenant_id)
         |> assign(:user_id, user_id)
-        |> assign(:user_role, header(conn, "x-user-role"))
+        |> assign(:user_role, role)
         |> assign(:tenant_timezone, timezone)
         |> assign(:tenant_vertical, header(conn, "x-tenant-vertical"))
         |> assign(:tenant_name, header(conn, "x-tenant-name"))

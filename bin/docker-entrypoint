@@ -1,6 +1,13 @@
 #!/bin/bash
 set -e
 
+# El volumen de documentos puede nacer propiedad de root: se ajusta y el
+# proceso baja de privilegios. El servidor nunca corre como root.
+if [ "$(id -u)" = "0" ]; then
+  [ -d /data/documents ] && chown -R kubo:kubo /data/documents
+  exec gosu kubo "$0" "$@"
+fi
+
 if [ "${KUBO_RUN_MIGRATIONS:-true}" = "true" ]; then
   echo "[kubo-erp] aplicando migraciones de base de datos"
   mix ecto.migrate

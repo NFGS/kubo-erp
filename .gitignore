@@ -1,6 +1,9 @@
 # The directory Mix will write compiled artifacts to.
 /_build/
 
+# Volcado de Erlang: puede contener datos en claro, nunca es entregable.
+/erl_crash.dump
+
 # If you run "mix test --cover", coverage assets end up here.
 /cover/
 

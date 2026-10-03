@@ -92,9 +92,9 @@ caja nunca depende del bus y un evento confirmado no se pierde (ADR-0009;
 
 ## Pruebas
 
-Son **52 pruebas ExUnit**: 34 puras (dinero, outbox, paginación, packs, planes,
-facturación, PDF, documentos y adaptadores) y 18 de integración contra
-PostgreSQL real (RLS, numeración atómica, atomicidad de la venta y el outbox,
+Son **55 pruebas ExUnit**: 34 puras (dinero, outbox, paginación, packs, planes,
+facturación, PDF, documentos y adaptadores) y 21 de integración/HTTP contra
+PostgreSQL real y los plugs (RLS, numeración atómica, atomicidad de la venta y el outbox,
 kardex, transferencias y notas crédito). El script los corre completos con
 cobertura y un **ratchet del 35 %** (hoy 36 %): la capa web y los flujos
 completos los cubre el humo contra el sistema vivo:
