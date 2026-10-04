@@ -55,6 +55,12 @@ defmodule KuboErpWeb.Plugs.Identity do
         |> assign(:tenant_vertical, header(conn, "x-tenant-vertical"))
         |> assign(:tenant_name, header(conn, "x-tenant-name"))
         |> assign(:tenant_plan, header(conn, "x-tenant-plan"))
+        |> assign(:tenant_tax_id, header(conn, "x-tenant-tax-id"))
+        |> assign(:tenant_tax_id_dv, header(conn, "x-tenant-tax-id-dv"))
+        |> assign(:tenant_fiscal_address, header(conn, "x-tenant-fiscal-address"))
+        |> assign(:tenant_tax_regime, header(conn, "x-tenant-tax-regime"))
+        |> assign(:tenant_invoice_resolution, header(conn, "x-tenant-invoice-resolution"))
+        |> assign(:tenant_invoice_prefix, header(conn, "x-tenant-invoice-prefix"))
     end
   end
 

@@ -21,6 +21,8 @@ defmodule KuboErp.Billing.Invoice do
     field(:qr_url, :string)
     field(:provider, :string)
     field(:status, :string, default: "ISSUED")
+    field(:provider_reference, :string)
+    field(:status_detail, :string)
     field(:xml, :string)
     field(:issued_at, :utc_datetime)
 
@@ -37,6 +39,8 @@ defmodule KuboErp.Billing.Invoice do
       :qr_url,
       :provider,
       :status,
+      :provider_reference,
+      :status_detail,
       :xml,
       :issued_at
     ])

@@ -160,6 +160,20 @@ if config_env() == :prod do
 
   config :kubo_erp, :notifications_adapter, notifications_adapter
 
+  # Facturacion electronica (ADR-0014): adaptador del puerto y ambiente DIAN
+  # (1 produccion, 2 habilitacion). El adaptador debe implementar el contrato;
+  # si no, el primer uso falla con un error claro en vez de emitir un documento
+  # invalido. La guia para enchufar un proveedor tecnologico vive en
+  # kubo-docs/13-guia-adaptador-facturacion.md.
+  billing_adapter =
+    case System.get_env("KUBO_BILLING_ADAPTER") do
+      valor when valor in [nil, ""] -> KuboErp.Billing.Sandbox
+      modulo -> Module.concat([modulo])
+    end
+
+  config :kubo_erp, :billing_adapter, billing_adapter
+  config :kubo_erp, :billing_environment, System.get_env("KUBO_BILLING_ENVIRONMENT", "2")
+
   # ## SSL Support
   #
   # To get SSL working, you will need to add the `https` key

@@ -23,12 +23,12 @@ defmodule KuboErp.Billing.Sandbox do
   @impl true
   def issue(tenant, %Sale{} = sale) do
     issued_at = DateTime.utc_now() |> DateTime.truncate(:second)
-    number = invoice_number(sale)
+    number = invoice_number(tenant, sale)
     cufe = cufe(tenant, sale, number, issued_at)
     qr_url = "https://catalogo-vpfe.dian.gov.co/document/searchqr?documentkey=#{cufe}"
     xml = ubl(tenant, sale, number, cufe, issued_at)
 
-    {:ok, %{number: number, cufe: cufe, qr_url: qr_url, xml: xml}}
+    {:ok, %{number: number, cufe: cufe, qr_url: qr_url, xml: xml, status: "ISSUED"}}
   end
 
   @impl true
@@ -39,13 +39,17 @@ defmodule KuboErp.Billing.Sandbox do
     qr_url = "https://catalogo-vpfe.dian.gov.co/document/searchqr?documentkey=#{cude}"
     xml = ubl_credit_note(tenant, sale, invoice, number, cude, reason, issued_at)
 
-    {:ok, %{number: number, cude: cude, qr_url: qr_url, xml: xml}}
+    {:ok, %{number: number, cude: cude, qr_url: qr_url, xml: xml, status: "ISSUED"}}
   end
 
   # La numeracion de la factura sigue a la de la venta: un negocio de barrio
-  # identifica ambas con el mismo consecutivo.
-  defp invoice_number(%Sale{number: "V-" <> consecutivo}), do: "FE-" <> consecutivo
+  # identifica ambas con el mismo consecutivo. El prefijo lo define el negocio
+  # (resolucion de facturacion); "FE" es el respaldo.
+  defp invoice_number(tenant, %Sale{number: "V-" <> consecutivo}), do: "#{prefijo(tenant)}-" <> consecutivo
   defp credit_note_number(%Sale{number: "V-" <> consecutivo}), do: "NC-" <> consecutivo
+
+  defp prefijo(%{invoice_prefix: prefijo}) when is_binary(prefijo) and prefijo != "", do: prefijo
+  defp prefijo(_tenant), do: "FE"
 
   @doc """
   CUDE segun la DIAN: SHA-384 de la concatenacion de los datos de la nota y el
@@ -106,11 +110,42 @@ defmodule KuboErp.Billing.Sandbox do
     |> Base.encode16(case: :lower)
   end
 
-  @doc "Ambiente DIAN: 1 produccion, 2 habilitacion. Configurable a proposito."
-  def environment, do: Application.get_env(:kubo_erp, :billing_environment, "2")
+  @doc "Ambiente DIAN: 1 produccion, 2 habilitacion. Lo define la configuracion."
+  def environment, do: KuboErp.Billing.environment()
 
   defp nit(%{tax_id: nit}) when is_binary(nit) and nit != "", do: nit
   defp nit(_tenant), do: @nit_marcador
+
+  defp dv(%{tax_id_dv: dv}) when is_binary(dv) and dv != "", do: dv
+  defp dv(_tenant), do: nil
+
+  # CompanyID con el digito de verificacion (schemeName 31 = NIT).
+  defp company_id(tenant) do
+    case dv(tenant) do
+      nil -> "<cbc:CompanyID schemeName=\"31\">#{esc(nit(tenant))}</cbc:CompanyID>"
+      dv -> "<cbc:CompanyID schemeName=\"31\" schemeID=\"#{esc(dv)}\">#{esc(nit(tenant))}</cbc:CompanyID>"
+    end
+  end
+
+  # Regimen y direccion fiscal: el proveedor tecnologico los mapea a los codigos
+  # oficiales de la DIAN; el sandbox los deja legibles para la habilitacion.
+  defp parte_fiscal(tenant) do
+    [regimen(tenant), direccion(tenant)]
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.join("\n          ")
+  end
+
+  defp regimen(%{tax_regime: regimen}) when is_binary(regimen) and regimen != "" do
+    "<cbc:TaxLevelCode>#{esc(regimen)}</cbc:TaxLevelCode>"
+  end
+
+  defp regimen(_tenant), do: ""
+
+  defp direccion(%{fiscal_address: direccion}) when is_binary(direccion) and direccion != "" do
+    "<cac:RegistrationAddress><cbc:StreetName>#{esc(direccion)}</cbc:StreetName></cac:RegistrationAddress>"
+  end
+
+  defp direccion(_tenant), do: ""
 
   defp dinero(%Decimal{} = valor), do: Decimal.to_string(valor, :normal)
   defp dinero(valor), do: to_string(valor)
@@ -154,9 +189,10 @@ defmodule KuboErp.Billing.Sandbox do
         <cac:Party>
           <cac:PartyName><cbc:Name>#{esc(nombre(tenant))}</cbc:Name></cac:PartyName>
           <cac:PartyTaxScheme>
-            <cbc:CompanyID>#{esc(nit(tenant))}</cbc:CompanyID>
+            #{company_id(tenant)}
             <cac:TaxScheme><cbc:ID>01</cbc:ID><cbc:Name>IVA</cbc:Name></cac:TaxScheme>
           </cac:PartyTaxScheme>
+          #{parte_fiscal(tenant)}
         </cac:Party>
       </cac:AccountingSupplierParty>
       <cac:AccountingCustomerParty>
@@ -227,9 +263,10 @@ defmodule KuboErp.Billing.Sandbox do
         <cac:Party>
           <cac:PartyName><cbc:Name>#{esc(nombre(tenant))}</cbc:Name></cac:PartyName>
           <cac:PartyTaxScheme>
-            <cbc:CompanyID>#{esc(nit(tenant))}</cbc:CompanyID>
+            #{company_id(tenant)}
             <cac:TaxScheme><cbc:ID>01</cbc:ID><cbc:Name>IVA</cbc:Name></cac:TaxScheme>
           </cac:PartyTaxScheme>
+          #{parte_fiscal(tenant)}
         </cac:Party>
       </cac:AccountingSupplierParty>
       <cac:AccountingCustomerParty>

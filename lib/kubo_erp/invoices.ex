@@ -36,6 +36,9 @@ defmodule KuboErp.Invoices do
                      cufe: emitida.cufe,
                      qr_url: emitida.qr_url,
                      provider: provider(),
+                     status: Map.get(emitida, :status, "ISSUED"),
+                     provider_reference: Map.get(emitida, :provider_reference),
+                     status_detail: Map.get(emitida, :status_detail),
                      xml: emitida.xml,
                      issued_at: DateTime.utc_now() |> DateTime.truncate(:second)
                    })
@@ -85,5 +88,33 @@ defmodule KuboErp.Invoices do
   @doc "Proveedor tecnologico configurado (el adaptador de facturacion)."
   def provider do
     Billing.adapter() |> Module.split() |> List.last() |> Macro.underscore()
+  end
+
+  @doc """
+  Consulta el estado en linea del documento con el proveedor (validacion
+  asincrona) y lo persiste. Los proveedores que validan de forma sincrona no
+  implementan esta operacion y responden `:not_supported`.
+  """
+  def refresh_status(tenant_id, id) do
+    case get(tenant_id, id) do
+      nil ->
+        {:error, :invoice_not_found}
+
+      %Invoice{} = factura ->
+        case Billing.refresh_status(factura) do
+          {:ok, actualizado} ->
+            factura
+            |> Invoice.changeset(%{
+              status: Map.get(actualizado, :status, factura.status),
+              status_detail: Map.get(actualizado, :status_detail, factura.status_detail),
+              provider_reference:
+                Map.get(actualizado, :provider_reference, factura.provider_reference)
+            })
+            |> Repo.update()
+
+          {:error, razon} ->
+            {:error, razon}
+        end
+    end
   end
 end

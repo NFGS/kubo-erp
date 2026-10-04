@@ -32,7 +32,18 @@ defmodule KuboErp.Billing.SandboxTest do
       ]
     }
 
-    %{venta: venta, tenant: %{id: "negocio-1", name: "Tienda & Cia", tax_id: "900123456"}}
+    %{
+      venta: venta,
+      tenant: %{
+        id: "negocio-1",
+        name: "Tienda & Cia",
+        tax_id: "900123456",
+        tax_id_dv: "8",
+        fiscal_address: "Calle 1 # 2-3",
+        tax_regime: "RESPONSABLE_IVA",
+        invoice_prefix: "FE"
+      }
+    }
   end
 
   test "el CUFE es hexadecimal de 96 caracteres y sigue a la venta", %{
@@ -43,7 +54,14 @@ defmodule KuboErp.Billing.SandboxTest do
 
     assert String.match?(factura.cufe, ~r/^[0-9a-f]{96}$/)
     assert factura.number == "FE-000042"
+    assert factura.status == "ISSUED"
     assert factura.qr_url =~ factura.cufe
+  end
+
+  test "el prefijo de facturacion lo define el negocio", %{venta: venta, tenant: tenant} do
+    {:ok, factura} = Sandbox.issue(%{tenant | invoice_prefix: "FV"}, venta)
+
+    assert factura.number == "FV-000042"
   end
 
   test "el CUFE cambia con los datos y es estable con los mismos", %{venta: venta, tenant: tenant} do
@@ -63,7 +81,9 @@ defmodule KuboErp.Billing.SandboxTest do
     assert xml =~ ~s(<cbc:PayableAmount currencyID="COP">11900.00</cbc:PayableAmount>)
     assert xml =~ "Cliente &amp; Cia &lt;prueba&gt;"
     assert xml =~ "Tienda &amp; Cia"
-    assert xml =~ "<cbc:CompanyID>900123456</cbc:CompanyID>"
+    assert xml =~ ~s(<cbc:CompanyID schemeName="31" schemeID="8">900123456</cbc:CompanyID>)
+    assert xml =~ "<cbc:TaxLevelCode>RESPONSABLE_IVA</cbc:TaxLevelCode>"
+    assert xml =~ "<cbc:StreetName>Calle 1 # 2-3</cbc:StreetName>"
     assert xml =~ "Cafe molido"
   end
 
@@ -93,6 +113,6 @@ defmodule KuboErp.Billing.SandboxTest do
   test "sin NIT registrado se usa el marcador documentado", %{venta: venta} do
     {:ok, factura} = Sandbox.issue(%{id: "negocio-1", name: "Tienda"}, venta)
 
-    assert factura.xml =~ "<cbc:CompanyID>900000000</cbc:CompanyID>"
+    assert factura.xml =~ ~s(<cbc:CompanyID schemeName="31">900000000</cbc:CompanyID>)
   end
 end

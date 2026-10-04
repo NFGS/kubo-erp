@@ -4,17 +4,13 @@ defmodule KuboErpWeb.CreditNoteController do
   use KuboErpWeb, :controller
 
   alias KuboErp.CreditNotes
+  alias KuboErpWeb.BillingErrors
 
   @doc "Emite la nota credito (idempotente: si ya existe, la devuelve)."
   def issue(conn, %{"id" => sale_id} = params) do
-    tenant = %{
-      id: conn.assigns.tenant_id,
-      name: conn.assigns[:tenant_name]
-    }
-
     razon = params["reason"]
 
-    case CreditNotes.issue(conn.assigns.tenant_id, sale_id, tenant, razon) do
+    case CreditNotes.issue(conn.assigns.tenant_id, sale_id, tenant(conn), razon) do
       {:ok, nota} ->
         conn |> put_status(:created) |> json(%{data: nota_json(nota)})
 
@@ -37,9 +33,23 @@ defmodule KuboErpWeb.CreditNoteController do
           "La venta no tiene factura: no hay nada que corregir"
         )
 
-      {:error, reason} ->
-        error(conn, :unprocessable_entity, "CREDIT_NOTE_FAILED", inspect(reason))
+      {:error, razon} ->
+        BillingErrors.responder(conn, razon)
     end
+  end
+
+  # El negocio viaja con sus datos fiscales (DIAN), igual que en la factura.
+  defp tenant(conn) do
+    %{
+      id: conn.assigns.tenant_id,
+      name: conn.assigns[:tenant_name],
+      tax_id: conn.assigns[:tenant_tax_id],
+      tax_id_dv: conn.assigns[:tenant_tax_id_dv],
+      fiscal_address: conn.assigns[:tenant_fiscal_address],
+      tax_regime: conn.assigns[:tenant_tax_regime],
+      invoice_resolution: conn.assigns[:tenant_invoice_resolution],
+      invoice_prefix: conn.assigns[:tenant_invoice_prefix]
+    }
   end
 
   def show(conn, %{"id" => sale_id}) do

@@ -138,6 +138,23 @@ con IVA incluido) y guarda `purchase.received` en la bandeja de salida. Anular
 la compra revierte el stock con `PURCHASE_VOID` y conserva la historia. La
 numeración (`C-000001`) sale del contador atómico por negocio.
 
+## Facturación electrónica (P-18, ADR-0014)
+
+La factura es un **puerto**: `KuboErp.Billing` define el contrato y el adaptador
+se elige por configuración (`KUBO_BILLING_ADAPTER`, por defecto el `Sandbox`).
+El ambiente DIAN se fija con `KUBO_BILLING_ENVIRONMENT` (1 producción, 2
+habilitación) y `GET /health` reporta el adaptador activo.
+
+- **Datos fiscales del emisor**: NIT (con DV calculado), dirección, régimen,
+  resolución y prefijo viajan en el token y los propaga el gateway; el negocio
+  los edita en Configuración.
+- **Estados y proveedor**: la factura guarda `status`, `provider_reference` y
+  `status_detail`; los adaptadores devuelven errores tipados
+  (`KuboErp.Billing.Error`) y pueden implementar `refresh_status/1` si validan
+  de forma asíncrona (`POST /invoices/:id/refresh`).
+- **Guía para enchufar el proveedor tecnológico**:
+  [`kubo-docs/13-guia-adaptador-facturacion.md`](../kubo-docs/13-guia-adaptador-facturacion.md).
+
 ## Observabilidad y calidad (Fase 2)
 
 - **Numeración atómica**: `tenant_counters` entrega el consecutivo con un UPSERT
