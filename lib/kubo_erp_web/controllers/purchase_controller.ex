@@ -52,6 +52,9 @@ defmodule KuboErpWeb.PurchaseController do
       {:error, :supplier_not_found} ->
         error(conn, :unprocessable_entity, "SUPPLIER_NOT_FOUND", "El proveedor no existe")
 
+      {:error, :warehouse_not_found} ->
+        error(conn, :not_found, "WAREHOUSE_NOT_FOUND", "La bodega no existe")
+
       {:error, :product_not_found} ->
         error(
           conn,

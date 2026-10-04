@@ -13,7 +13,19 @@ defmodule KuboErp.Integration.SalesFlowTest do
 
   use KuboErp.DataCase, async: false
 
-  alias KuboErp.{Catalog, CreditNotes, Invoices, Notifications, Repo, Sales, Transfers, Warehouses}
+  alias KuboErp.{
+    Catalog,
+    CreditNotes,
+    Invoices,
+    Notifications,
+    Purchases,
+    Repo,
+    Sales,
+    Suppliers,
+    Transfers,
+    Warehouses
+  }
+
   alias KuboErp.Notifications.Notification
 
   setup do
@@ -66,7 +78,9 @@ defmodule KuboErp.Integration.SalesFlowTest do
 
   test "la venta descuenta de la bodega elegida (P-22)", %{tenant: tenant, producto: producto} do
     destino = como_tenant(tenant, fn -> Warehouses.default(tenant) end)
-    {:ok, norte} = como_tenant(tenant, fn -> Warehouses.create(tenant, %{"name" => "Bodega norte"}) end)
+
+    {:ok, norte} =
+      como_tenant(tenant, fn -> Warehouses.create(tenant, %{"name" => "Bodega norte"}) end)
 
     # La mercancia se mueve a la bodega norte y alli se vende.
     {:ok, _transferencia} =
@@ -107,7 +121,9 @@ defmodule KuboErp.Integration.SalesFlowTest do
     producto: producto
   } do
     origen = como_tenant(tenant, fn -> Warehouses.default(tenant) end)
-    {:ok, destino} = como_tenant(tenant, fn -> Warehouses.create(tenant, %{"name" => "Bodega norte"}) end)
+
+    {:ok, destino} =
+      como_tenant(tenant, fn -> Warehouses.create(tenant, %{"name" => "Bodega norte"}) end)
 
     {:ok, transferencia} =
       como_tenant(tenant, fn ->
@@ -226,7 +242,9 @@ defmodule KuboErp.Integration.SalesFlowTest do
     assert documento.reference_id == nota.id
 
     # Idempotente: un reintento (o un doble clic) no emite dos notas fiscales.
-    {:ok, repetida} = como_tenant(tenant, fn -> CreditNotes.issue(tenant, venta.id, negocio, nil) end)
+    {:ok, repetida} =
+      como_tenant(tenant, fn -> CreditNotes.issue(tenant, venta.id, negocio, nil) end)
+
     assert repetida.id == nota.id
 
     # RLS: otro negocio no ve la nota.
@@ -331,6 +349,62 @@ defmodule KuboErp.Integration.SalesFlowTest do
            )
   end
 
+  test "la compra entra a la bodega elegida y la anulacion revierte alli (P-22)", %{
+    tenant: tenant,
+    producto: producto
+  } do
+    {:ok, norte} =
+      como_tenant(tenant, fn -> Warehouses.create(tenant, %{"name" => "Bodega compras"}) end)
+
+    proveedor = crear_proveedor(tenant)
+    defecto = como_tenant(tenant, fn -> Warehouses.default(tenant) end)
+
+    {:ok, compra} =
+      como_tenant(tenant, fn ->
+        Purchases.create(tenant, Ecto.UUID.generate(), %{
+          "supplier_id" => proveedor.id,
+          "warehouse_id" => norte.id,
+          "items" => [%{"product_id" => producto.id, "quantity" => 5, "unit_cost" => "5000.00"}]
+        })
+      end)
+
+    assert compra.warehouse_id == norte.id
+    assert nivel(tenant, norte.id, producto) == 5
+    assert nivel(tenant, defecto.id, producto) == 10
+    assert stock(tenant, producto) == 15
+
+    # El kardex registra la bodega de la compra.
+    %{rows: [[bodega_movimiento]]} =
+      como_tenant(tenant, fn ->
+        Repo.query!(
+          "select warehouse_id from stock_movements where reference_type = 'PURCHASE' and reference_id = $1",
+          [Ecto.UUID.dump!(compra.id)]
+        )
+      end)
+
+    assert bodega_movimiento == Ecto.UUID.dump!(norte.id)
+
+    # Anular revierte en la misma bodega, no en la de por defecto.
+    {:ok, _anulada} =
+      como_tenant(tenant, fn -> Purchases.void(tenant, Ecto.UUID.generate(), compra.id) end)
+
+    assert nivel(tenant, norte.id, producto) == 0
+    assert nivel(tenant, defecto.id, producto) == 10
+    assert stock(tenant, producto) == 10
+
+    # Una bodega ajena no recibe la compra.
+    assert {:error, :warehouse_not_found} =
+             como_tenant(tenant, fn ->
+               Purchases.create(tenant, Ecto.UUID.generate(), %{
+                 "supplier_id" => proveedor.id,
+                 "warehouse_id" => Ecto.UUID.generate(),
+                 "items" => [
+                   %{"product_id" => producto.id, "quantity" => 1, "unit_cost" => "1000.00"}
+                 ]
+               })
+             end)
+  end
+
   # ---------------------------------------------------------------------------
   # Helpers
   # ---------------------------------------------------------------------------
@@ -350,6 +424,18 @@ defmodule KuboErp.Integration.SalesFlowTest do
         Catalog.move_stock(producto, 10, kind: "IN", reason: "Prueba")
 
       producto
+    end)
+  end
+
+  defp crear_proveedor(tenant) do
+    como_tenant(tenant, fn ->
+      {:ok, proveedor} =
+        Suppliers.create(tenant, %{
+          "name" => "Proveedor Integracion",
+          "tax_id" => "900#{String.slice(tenant, 0, 6)}"
+        })
+
+      proveedor
     end)
   end
 

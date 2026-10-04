@@ -16,7 +16,7 @@ defmodule KuboErp.Purchases do
   import Ecto.Query
 
   alias Ecto.Changeset
-  alias KuboErp.{Catalog, Notifications, Pagination, Repo, Sales}
+  alias KuboErp.{Catalog, Notifications, Pagination, Repo, Sales, Warehouses}
   alias KuboErp.Catalog.Product
   alias KuboErp.Purchasing.{Purchase, PurchaseItem, Supplier}
   alias KuboErp.Events.{Outbox, Publisher, PurchaseReceived}
@@ -122,6 +122,7 @@ defmodule KuboErp.Purchases do
                        reason: "Anulacion de la compra #{purchase.number}",
                        reference_type: "PURCHASE_VOID",
                        reference_id: purchase.id,
+                       warehouse_id: purchase.warehouse_id,
                        created_by: user_id
                      ) do
                   {:ok, _product, _movement} -> :ok
@@ -146,6 +147,7 @@ defmodule KuboErp.Purchases do
 
   defp insert_purchase(tenant_id, user_id, attrs, items) do
     supplier = fetch_supplier(tenant_id, attrs["supplier_id"])
+    warehouse = resolver_bodega(tenant_id, attrs["warehouse_id"] || attrs[:warehouse_id])
     products = lock_products(tenant_id, Enum.map(items, & &1.product_id))
 
     prepared =
@@ -175,7 +177,8 @@ defmodule KuboErp.Purchases do
         total: totals.total,
         notes: attrs["notes"],
         received_by: user_id,
-        received_at: DateTime.utc_now() |> DateTime.truncate(:second)
+        received_at: DateTime.utc_now() |> DateTime.truncate(:second),
+        warehouse_id: warehouse.id
       })
 
     purchase_items =
@@ -196,6 +199,18 @@ defmodule KuboErp.Purchases do
     )
 
     {purchase, purchase_items}
+  end
+
+  # La bodega pedida debe ser del negocio; sin ella, la por defecto.
+  defp resolver_bodega(tenant_id, warehouse_id) when warehouse_id in [nil, ""] do
+    Warehouses.default(tenant_id)
+  end
+
+  defp resolver_bodega(tenant_id, warehouse_id) do
+    case Warehouses.get(tenant_id, warehouse_id) do
+      nil -> Repo.rollback(:warehouse_not_found)
+      warehouse -> warehouse
+    end
   end
 
   defp fetch_supplier(tenant_id, raw_id) do
@@ -244,6 +259,7 @@ defmodule KuboErp.Purchases do
            reason: "Compra #{purchase.number}",
            reference_type: "PURCHASE",
            reference_id: purchase.id,
+           warehouse_id: purchase.warehouse_id,
            created_by: user_id
          ) do
       {:ok, updated, _movement} ->

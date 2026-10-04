@@ -45,6 +45,7 @@ defmodule KuboErpWeb.StockJSON do
       reason: movement.reason,
       reference_type: movement.reference_type,
       reference_id: movement.reference_id,
+      warehouse_id: movement.warehouse_id,
       created_at: iso(movement.inserted_at)
     }
   end

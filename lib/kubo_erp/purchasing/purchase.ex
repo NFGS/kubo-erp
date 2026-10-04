@@ -25,6 +25,9 @@ defmodule KuboErp.Purchasing.Purchase do
     field(:received_at, :utc_datetime)
     field(:voided_at, :utc_datetime)
 
+    # Bodega a la que entro la mercancia (P-22): la anulacion revierte alli.
+    field(:warehouse_id, :binary_id)
+
     belongs_to(:supplier, KuboErp.Purchasing.Supplier)
     has_many(:items, KuboErp.Purchasing.PurchaseItem)
 
@@ -45,7 +48,8 @@ defmodule KuboErp.Purchasing.Purchase do
       :notes,
       :received_by,
       :received_at,
-      :voided_at
+      :voided_at,
+      :warehouse_id
     ])
     |> validate_required([:tenant_id, :number, :supplier_id, :supplier_name, :received_at])
     |> validate_inclusion(:status, ["RECEIVED", "VOIDED"])

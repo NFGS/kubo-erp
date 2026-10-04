@@ -27,6 +27,7 @@ defmodule KuboErpWeb.PurchaseJSON do
       received_by: purchase.received_by,
       received_at: iso(purchase.received_at),
       voided_at: iso(purchase.voided_at),
+      warehouse_id: purchase.warehouse_id,
       items: Enum.map(purchase.items || [], &item_data/1)
     }
   end
