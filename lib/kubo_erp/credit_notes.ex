@@ -33,7 +33,23 @@ defmodule KuboErp.CreditNotes do
         {:ok, existente}
 
       nil ->
-        emitir(tenant_id, sale_id, tenant, razon)
+        # Un solo emisor por venta aunque lleguen dos peticiones a la vez: el
+        # candado se libera al terminar la transaccion (mismo contrato que la
+        # factura; evita llamar dos veces al proveedor tecnologico).
+        Repo.scoped_transaction(fn ->
+          Repo.query!("select pg_advisory_xact_lock(hashtext($1))", [sale_id])
+
+          case get_by_sale(tenant_id, sale_id) do
+            %CreditNote{} = existente ->
+              existente
+
+            nil ->
+              case emitir(tenant_id, sale_id, tenant, razon) do
+                {:ok, nota} -> nota
+                {:error, reason} -> Repo.rollback(reason)
+              end
+          end
+        end)
     end
   end
 

@@ -20,50 +20,66 @@ defmodule KuboErp.Invoices do
         {:ok, existente}
 
       nil ->
-        # Una venta anulada no se factura: el camino correcto es una nota
-        # credito, no un documento que ya no corresponde.
-        with %Sale{status: "COMPLETED"} = sale <- Sales.get_sale(tenant_id, sale_id),
-             {:ok, emitida} <- Billing.issue(tenant, sale) do
-          # La factura y su XML se guardan juntos: una factura sin su documento
-          # seria una inconsistencia que despues nadie puede reconstruir.
-          Repo.scoped_transaction(fn ->
-            factura =
-              case %Invoice{}
-                   |> Invoice.changeset(%{
-                     tenant_id: tenant_id,
-                     sale_id: sale.id,
-                     number: emitida.number,
-                     cufe: emitida.cufe,
-                     qr_url: emitida.qr_url,
-                     provider: provider(),
-                     status: Map.get(emitida, :status, "ISSUED"),
-                     provider_reference: Map.get(emitida, :provider_reference),
-                     status_detail: Map.get(emitida, :status_detail),
-                     xml: emitida.xml,
-                     issued_at: DateTime.utc_now() |> DateTime.truncate(:second)
-                   })
-                   |> Repo.insert() do
-                {:ok, factura} -> factura
-                {:error, changeset} -> Repo.rollback(changeset)
-              end
+        # Un solo emisor por venta aunque lleguen dos peticiones a la vez (doble
+        # clic, reintento): el candado por venta se libera al terminar la
+        # transaccion y evita llamar dos veces al proveedor tecnologico.
+        Repo.scoped_transaction(fn ->
+          Repo.query!("select pg_advisory_xact_lock(hashtext($1))", [sale_id])
 
-            case Documents.store(tenant_id, %{
-                   kind: "INVOICE_XML",
-                   filename: "#{factura.number}.xml",
-                   content_type: "application/xml",
-                   content: emitida.xml,
-                   reference_type: "INVOICE",
-                   reference_id: factura.id
-                 }) do
-              {:ok, _documento} -> factura
-              {:error, razon} -> Repo.rollback(razon)
-            end
-          end)
-        else
-          nil -> {:error, :sale_not_found}
-          %Sale{} -> {:error, :sale_voided}
-          {:error, reason} -> {:error, reason}
+          case get_by_sale(tenant_id, sale_id) do
+            %Invoice{} = existente ->
+              existente
+
+            nil ->
+              case emitir(tenant_id, sale_id, tenant) do
+                {:ok, factura} -> factura
+                {:error, reason} -> Repo.rollback(reason)
+              end
+          end
+        end)
+    end
+  end
+
+  defp emitir(tenant_id, sale_id, tenant) do
+    with %Sale{status: "COMPLETED"} = sale <- Sales.get_sale(tenant_id, sale_id),
+         {:ok, emitida} <- Billing.issue(tenant, sale) do
+      # La factura y su XML se guardan juntos: una factura sin su documento
+      # seria una inconsistencia que despues nadie puede reconstruir.
+      factura =
+        case %Invoice{}
+             |> Invoice.changeset(%{
+               tenant_id: tenant_id,
+               sale_id: sale.id,
+               number: emitida.number,
+               cufe: emitida.cufe,
+               qr_url: emitida.qr_url,
+               provider: provider(),
+               status: Map.get(emitida, :status, "ISSUED"),
+               provider_reference: Map.get(emitida, :provider_reference),
+               status_detail: Map.get(emitida, :status_detail),
+               xml: emitida.xml,
+               issued_at: DateTime.utc_now() |> DateTime.truncate(:second)
+             })
+             |> Repo.insert() do
+          {:ok, factura} -> factura
+          {:error, changeset} -> Repo.rollback(changeset)
         end
+
+      case Documents.store(tenant_id, %{
+             kind: "INVOICE_XML",
+             filename: "#{factura.number}.xml",
+             content_type: "application/xml",
+             content: emitida.xml,
+             reference_type: "INVOICE",
+             reference_id: factura.id
+           }) do
+        {:ok, _documento} -> {:ok, factura}
+        {:error, razon} -> Repo.rollback(razon)
+      end
+    else
+      nil -> {:error, :sale_not_found}
+      %Sale{} -> {:error, :sale_voided}
+      {:error, reason} -> {:error, reason}
     end
   end
 
