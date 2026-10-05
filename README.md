@@ -1,5 +1,7 @@
 # kubo-erp
 
+> Parte del proyecto **Kubo** — [kubo-workspace](https://github.com/NFGS/kubo-workspace) (ERP + CRM autoalojable para PYMES).
+
 Núcleo transaccional de Kubo: catálogo, inventario (kardex), ventas, compras,
 caja, bodegas, facturación y documentos.
 
