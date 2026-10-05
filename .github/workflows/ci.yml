@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  pruebas:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: kubo_root
+          POSTGRES_PASSWORD: kubo_root_dev
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U kubo_root"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      MIX_ENV: test
+      TEST_DB_HOST: localhost
+      TEST_DB_USER: kubo_erp
+      TEST_DB_PASSWORD: kubo_erp_dev
+      TEST_DB_NAME: kubo_erp_test
+      KUBO_DOCUMENTS_PATH: /tmp/kubo-documents
+    steps:
+      - uses: actions/checkout@v4
+      - uses: erlef/setup-beam@v1
+        with:
+          elixir-version: "1.17"
+          otp-version: "27"
+      - name: Dependencias
+        run: |
+          mix local.hex --force
+          mix local.rebar --force
+          mix deps.get
+      - name: Prepara el rol de aplicacion (no superusuario: RLS con FORCE)
+        run: |
+          PGPASSWORD=kubo_root_dev psql -h localhost -U kubo_root -d postgres -v ON_ERROR_STOP=1 \
+            -c "CREATE ROLE kubo_erp LOGIN PASSWORD 'kubo_erp_dev' NOSUPERUSER NOCREATEDB" \
+            -c "CREATE DATABASE kubo_erp_test OWNER kubo_erp ENCODING 'UTF8'"
+      - name: Migraciones y pruebas (con ratchet de cobertura)
+        run: |
+          mix ecto.migrate
+          mix test --cover
