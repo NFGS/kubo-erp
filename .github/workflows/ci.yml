@@ -40,7 +40,7 @@ jobs:
           mix local.hex --force
           mix local.rebar --force
           mix deps.get
-      - name: Prepara el rol de aplicacion (no superusuario: RLS con FORCE)
+      - name: "Prepara el rol de aplicacion (no superusuario: RLS con FORCE)"
         run: |
           PGPASSWORD=kubo_root_dev psql -h localhost -U kubo_root -d postgres -v ON_ERROR_STOP=1 \
             -c "CREATE ROLE kubo_erp LOGIN PASSWORD 'kubo_erp_dev' NOSUPERUSER NOCREATEDB" \
