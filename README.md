@@ -1,5 +1,7 @@
 # kubo-erp
 
+[![CI](https://github.com/NFGS/kubo-erp/actions/workflows/ci.yml/badge.svg)](https://github.com/NFGS/kubo-erp/actions/workflows/ci.yml)
+
 > Parte del proyecto **Kubo** — [kubo-workspace](https://github.com/NFGS/kubo-workspace) (ERP + CRM autoalojable para PYMES).
 
 Núcleo transaccional de Kubo: catálogo, inventario (kardex), ventas, compras,
